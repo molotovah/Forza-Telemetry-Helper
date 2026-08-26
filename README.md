@@ -79,8 +79,8 @@ peak power 300 kW  peak torque 450 Nm
 | 0     | Project scaffolding, CI                                            | ✅ done        |
 | 1     | UDP ingestion + packet parser + synthetic fixtures                 | ✅ done        |
 | 2     | Session recording & feature extraction (per-lap aggregates, CSV)   | ✅ done        |
-| 3     | Rules-based tuning engine (full setup: tires, alignment, springs…) | 🚧 in progress |
-| 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | ⏳ planned      |
+| 3     | Rules-based tuning engine (tires, alignment, springs, gearing)     | ✅ done        |
+| 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | 🚧 in progress |
 | 5     | CLI reports + community web dashboard                              | ⏳ planned      |
 | 6     | Community docs, examples, contribution workflow                    | ⏳ planned      |
 

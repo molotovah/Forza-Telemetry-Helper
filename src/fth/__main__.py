@@ -7,6 +7,7 @@ import sys
 
 from fth.ingest import TelemetryPacket, listen
 from fth.session import CsvRecorder, format_report, load_csv, summarize
+from fth.tuning import format_suggestions, suggest
 
 
 def _live(args: argparse.Namespace) -> None:
@@ -46,7 +47,10 @@ def _live_line(pkt: TelemetryPacket) -> str:
 def _analyze(args: argparse.Namespace) -> None:
     with open(args.log, newline="") as stream:
         packets = [p for p in load_csv(stream) if p.is_race_on]
-    print(format_report(summarize(packets)))
+    summary = summarize(packets)
+    print(format_report(summary))
+    print()
+    print(format_suggestions(suggest(summary)))
 
 
 def main() -> None:

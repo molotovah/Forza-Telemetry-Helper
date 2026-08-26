@@ -67,6 +67,8 @@ class SessionSummary:
     tire_temp_max_c: float
     susp_travel_front_max_m: float
     susp_travel_rear_max_m: float
+    susp_travel_front_max_norm: float  # 0..1, 1 = fully compressed
+    susp_travel_rear_max_norm: float
     max_power_kw: float
     max_torque_nm: float
 
@@ -142,6 +144,17 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
         ),
         susp_travel_rear_max_m=max(
             max(p.suspension_travel_meters_rear_left, p.suspension_travel_meters_rear_right)
+            for p in ps
+        ),
+        susp_travel_front_max_norm=max(
+            max(
+                p.normalized_suspension_travel_front_left,
+                p.normalized_suspension_travel_front_right,
+            )
+            for p in ps
+        ),
+        susp_travel_rear_max_norm=max(
+            max(p.normalized_suspension_travel_rear_left, p.normalized_suspension_travel_rear_right)
             for p in ps
         ),
         max_power_kw=max(p.power for p in ps) / 1000,
