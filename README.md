@@ -74,9 +74,13 @@ four tabs:
   plan* button that sends your whole session to the configured model.
 - **Captures** — start/stop recording independently of the live rolling
   buffer, save the recording under a name, or import a CSV recorded
-  elsewhere. Saved captures live at `~/.fth/captures/<name>.csv` and are
-  listed here; open one's charts with `fth dashboard ~/.fth/captures/<name>.csv`.
-  Recording controls only appear in live mode (`fth` / `fth dashboard --live`).
+  elsewhere. An *auto-capture per lap* checkbox additionally saves every
+  completed lap as its own capture automatically (named
+  `auto-lap<n>-<timestamp>`), running alongside — not instead of — the
+  manual start/stop. Saved captures live at `~/.fth/captures/<name>.csv` and
+  are listed here; open one's charts with
+  `fth dashboard ~/.fth/captures/<name>.csv`. Recording controls only appear
+  in live mode (`fth` / `fth dashboard --live`).
 - **Settings** — paste your OpenRouter API key, pick a model
   (`stealth/ox-alpha` by default), set the reasoning effort. Saved locally to
   `~/.fth/config.json`; the key is never sent anywhere except the model
@@ -192,6 +196,7 @@ on the badge.
 | 16    | Captures tab UI: start/stop/save/import/list                       | ✅ done        |
 | 17    | AI provider choice: OpenRouter or Groq                             | ✅ done        |
 | 18    | Free/reasoning model listing + checkbox picker                     | ✅ done        |
+| 19    | Unit auto-detection wired in; lap-aware session reset; auto-lap capture | ✅ done   |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

@@ -26,7 +26,7 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
 - `advisor.py` — AI layer: OpenRouter or Groq (`_PROVIDERS` table, OpenAI-compatible chat API) via stdlib `urllib`; settings resolved provider defaults <- `~/.fth/config.json` <- env (`FTH_AI_*`); `list_models()` fetches/flags free+reasoning models per provider; always falls back to the rules engine on missing key or any error
 - `config.py` — persistent user settings store (`~/.fth/config.json`, path overridable via `FTH_CONFIG`)
 - `captures.py` — named capture storage (`~/.fth/captures/<name>.csv`, path overridable via `FTH_CAPTURES_DIR`): save/load/import/list, reuses `session.CsvRecorder`/`load_csv`
-- `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Captures/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`, `/captures`, `/capture/*`), Chart.js CDN, stdlib `http.server`
+- `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Captures/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`, `/captures`, `/capture/*`, `/capture/auto*`), Chart.js CDN, stdlib `http.server`. `CaptureController` (manual start/stop/save) and `AutoLapRecorder` (opt-in, saves each completed lap automatically) run independently off the same UDP feed.
 - `fixtures.py` — synthetic packet builder for tests/demos (`make_packet(**overrides)`)
 
 ## Conventions

@@ -174,6 +174,7 @@ def test_http_page_and_data():
         assert 'id="capture-start"' in page
         assert 'id="f-provider"' in page
         assert 'id="model-checks"' in page
+        assert 'id="auto-capture-toggle"' in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200
@@ -318,6 +319,62 @@ def test_capture_lifecycle_over_http(monkeypatch, tmp_path):
         httpd.server_close()
 
 
+def test_auto_lap_capture_saves_each_completed_lap(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CAPTURES_DIR", str(tmp_path / "captures"))
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+
+        status, body = _post(base + "/capture/auto", {"enabled": True})
+        assert status == 200
+        assert json.loads(body)["enabled"] is True
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def send(rows):
+            for t, lap in rows:
+                sock.sendto(
+                    make_packet(speed=50.0, current_race_time=float(t), lap_number=lap),
+                    ("127.0.0.1", udp_port),
+                )
+
+        def auto_status():
+            for _ in range(50):
+                _, _, body = _get(base + "/capture/auto/status")
+                s = json.loads(body)
+                if s["samples"] > 0:
+                    return s
+                time.sleep(0.1)
+            return None
+
+        send([(0, 0), (1, 0), (2, 0)])
+        assert auto_status()["current_lap"] == 0
+
+        send([(0, 1), (1, 1)])  # lap boundary: lap 0 must be auto-saved
+        for _ in range(50):
+            _, _, body = _get(base + "/captures")
+            names = [c["name"] for c in json.loads(body)["captures"]]
+            if any(n.startswith("auto-lap0-") for n in names):
+                break
+            time.sleep(0.1)
+        else:
+            raise AssertionError("lap 0 was never auto-saved")
+
+        status, body = _post(base + "/capture/auto", {"enabled": False})
+        assert json.loads(body) == {"enabled": False, "current_lap": None, "samples": 0}
+        sock.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_capture_endpoints_404_in_static_mode():
     httpd = make_server(lambda: _packets(6), host="127.0.0.1", port=0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -331,6 +388,13 @@ def test_capture_endpoints_404_in_static_mode():
             raise AssertionError("expected 404")
         except urllib.error.HTTPError as exc:
             assert exc.code == 404
+        try:
+            _get(base + "/capture/auto/status")
+            raise AssertionError("expected 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+        status, body = _post(base + "/capture/auto", {"enabled": True})
+        assert status == 404
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -400,6 +464,50 @@ def test_live_server_resets_on_session_restart():
         assert samples() == 4
         send([-10, -9])  # session restart: race time went backwards
         assert samples() == 2
+        sock.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_live_server_keeps_buffer_across_lap_time_reset():
+    """Time-trial/hot-lap: race time resets each lap but the lap number keeps
+    advancing — that's a new lap, not a new session, so nothing should clear."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def send(rows):
+            for t, lap in rows:
+                sock.sendto(
+                    make_packet(speed=50.0, current_race_time=float(t), lap_number=lap),
+                    ("127.0.0.1", udp_port),
+                )
+
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}/data"
+
+        def samples():
+            for _ in range(50):
+                try:
+                    _, _, payload = _get(base)
+                except OSError:
+                    continue
+                if "waiting" not in payload:
+                    return json.loads(payload)["summary"]["samples"]
+                time.sleep(0.1)
+            return None
+
+        send([(0, 0), (1, 0), (2, 0)])  # lap 0
+        assert samples() == 3
+        send([(0, 1), (1, 1)])  # lap 1: race time restarts, lap number advances
+        assert samples() == 5  # kept, not cleared
         sock.close()
     finally:
         httpd.shutdown()

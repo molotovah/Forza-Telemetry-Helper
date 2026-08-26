@@ -12,6 +12,7 @@ from __future__ import annotations
 import json
 import sys
 import threading
+import time
 import webbrowser
 from collections import deque
 from dataclasses import asdict
@@ -113,6 +114,12 @@ _PAGE = """<!doctype html>
     <label>Name</label>
     <input type="text" id="capture-name" placeholder="e.g. spa-gt3-race1">
     <button class="action" id="capture-save-btn">Save capture</button>
+  </div>
+  <h2>Auto-capture per lap</h2>
+  <div id="auto-capture-controls">
+    <label><input type="checkbox" id="auto-capture-toggle"> auto-save each completed lap
+      as its own capture (named <code>auto-lap&lt;n&gt;-&lt;timestamp&gt;</code>)</label>
+    <p class="hint" id="auto-capture-status-text"></p>
   </div>
   <h2>Import a CSV</h2>
   <label>Name</label>
@@ -339,6 +346,27 @@ async function refreshCaptureStatus() {
   }
 }
 
+async function refreshAutoCaptureStatus() {
+  try {
+    const s = await api("/capture/auto/status");
+    if (s.error) throw new Error(s.error);
+    document.getElementById("auto-capture-controls").hidden = false;
+    document.getElementById("auto-capture-toggle").checked = s.enabled;
+    document.getElementById("auto-capture-status-text").textContent = s.enabled
+      ? `lap ${s.current_lap ?? "?"} in progress — ${s.samples} samples buffered`
+      : "off";
+  } catch {
+    document.getElementById("auto-capture-controls").hidden = true;  // static CSV mode
+  }
+}
+
+document.getElementById("auto-capture-toggle").onchange = async (ev) => {
+  await api("/capture/auto", {method: "POST",
+                              headers: {"Content-Type": "application/json"},
+                              body: JSON.stringify({enabled: ev.target.checked})});
+  refreshAutoCaptureStatus();
+};
+
 document.getElementById("capture-start").onclick = async () => {
   await api("/capture/start", {method: "POST"});
   refreshCaptureStatus();
@@ -371,9 +399,11 @@ document.getElementById("capture-import-file").onchange = async (ev) => {
 };
 document.querySelector('[data-tab="captures"]').addEventListener("click", () => {
   refreshCaptureStatus();
+  refreshAutoCaptureStatus();
   refreshCapturesList();
 });
 refreshCaptureStatus();
+refreshAutoCaptureStatus();
 refreshCapturesList();
 
 let modelsCache = [];
@@ -532,12 +562,55 @@ class CaptureController:
         return captures.save(name, self._packets)
 
 
+class AutoLapRecorder:
+    """Opt-in companion to CaptureController: auto-saves each completed lap
+    as its own named capture, independent of manual start/stop.
+
+    A lap in progress when disabled (or when the process exits) is dropped,
+    not saved — only fully completed laps get written.
+    """
+
+    def __init__(self) -> None:
+        self._enabled = False
+        self._lap: int | None = None
+        self._packets: list[TelemetryPacket] = []
+
+    def set_enabled(self, on: bool) -> None:
+        self._enabled = on
+        if not on:
+            self._packets = []
+            self._lap = None
+
+    def note(self, pkt: TelemetryPacket) -> None:
+        if not self._enabled:
+            return
+        if self._lap is None:
+            self._lap = pkt.lap_number
+        elif pkt.lap_number != self._lap:
+            self._flush()
+            self._lap = pkt.lap_number
+        self._packets.append(pkt)
+
+    def _flush(self) -> None:
+        if self._packets:
+            name = f"auto-lap{self._lap}-{time.strftime('%Y%m%d-%H%M%S')}"
+            try:
+                captures.save(name, self._packets)
+            except captures.InvalidName:
+                pass
+        self._packets = []
+
+    def status(self) -> dict:
+        return {"enabled": self._enabled, "current_lap": self._lap, "samples": len(self._packets)}
+
+
 def make_server(
     packets_getter: Callable[[], list[TelemetryPacket] | None],
     host: str = "127.0.0.1",
     port: int = 8000,
     error_getter: Callable[[], str] | None = None,
     capture: CaptureController | None = None,
+    auto_capture: AutoLapRecorder | None = None,
 ) -> HTTPServer:
     """packets_getter() -> current packet list, or None while nothing arrived."""
 
@@ -594,6 +667,11 @@ def make_server(
                     self._send('{"error": "live mode only"}', "application/json", 404)
                 else:
                     self._send(json.dumps(capture.status()), "application/json")
+            elif path == "/capture/auto/status":
+                if auto_capture is None:
+                    self._send('{"error": "live mode only"}', "application/json", 404)
+                else:
+                    self._send(json.dumps(auto_capture.status()), "application/json")
             else:
                 self._serve_page()
 
@@ -643,6 +721,12 @@ def make_server(
                         )
                     except (ValueError, captures.InvalidName) as exc:
                         self._send(json.dumps({"error": str(exc)}), "application/json", 400)
+            elif path == "/capture/auto":
+                if auto_capture is None:
+                    self._send('{"error": "live mode only"}', "application/json", 404)
+                else:
+                    auto_capture.set_enabled(bool(fields.get("enabled")))
+                    self._send(json.dumps(auto_capture.status()), "application/json")
             else:
                 self._send('{"error": "not found"}', "application/json", 404)
 
@@ -677,18 +761,31 @@ def make_live_server(
     buf: deque[TelemetryPacket] = deque(maxlen=_BUFFER_LEN)
     state = {"udp_error": ""}
     capture = CaptureController()
+    auto_capture = AutoLapRecorder()
 
     def feed() -> None:
         last_t: float | None = None
+        last_lap: int | None = None
         try:
             for pkt in listen(udp_host, udp_port):
                 if not pkt.is_race_on:
                     continue
-                if last_t is not None and pkt.current_race_time < last_t - 1.0:
-                    buf.clear()  # race time went backwards: fresh session
+                # Race time alone resets every lap in time-trial/hot-lap modes,
+                # so a dip there isn't proof of a new session. Only treat it as
+                # one when the lap number *also* fails to advance — a genuine
+                # restart (back to menu, new race) resets both.
+                if (
+                    last_t is not None
+                    and pkt.current_race_time < last_t - 1.0
+                    and last_lap is not None
+                    and pkt.lap_number <= last_lap
+                ):
+                    buf.clear()
                 buf.append(pkt)
                 capture.note(pkt)
+                auto_capture.note(pkt)
                 last_t = pkt.current_race_time
+                last_lap = pkt.lap_number
         except OSError as exc:
             state["udp_error"] = f"cannot bind udp://{udp_host}:{udp_port}: {exc}"
             print(f"fth: {state['udp_error']}", file=sys.stderr)
@@ -697,7 +794,14 @@ def make_live_server(
         return list(buf) if len(buf) >= 2 else None
 
     threading.Thread(target=feed, daemon=True).start()
-    return make_server(getter, host, port, error_getter=lambda: state["udp_error"], capture=capture)
+    return make_server(
+        getter,
+        host,
+        port,
+        error_getter=lambda: state["udp_error"],
+        capture=capture,
+        auto_capture=auto_capture,
+    )
 
 
 def serve_live(
