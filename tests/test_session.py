@@ -5,7 +5,14 @@ import pytest
 
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
-from fth.session import CsvRecorder, format_report, load_csv, summarize
+from fth.session import (
+    CsvRecorder,
+    format_per_lap,
+    format_report,
+    load_csv,
+    summarize,
+    summarize_per_lap,
+)
 
 
 def _packets(n: int = 10) -> list[TelemetryPacket]:
@@ -101,3 +108,24 @@ def test_report_render():
     assert "Session summary" in text
     assert f"front {s.grip_loss_front_pct:.1f}%" in text
     assert f"{s.max_torque_nm:.0f} Nm" in text
+
+
+def test_summarize_per_lap():
+    ps = [
+        TelemetryPacket.from_bytes(
+            make_packet(speed=50.0, current_race_time=float(i), lap_number=n)
+        )
+        for i, n in enumerate([0, 0, 1, 1])
+    ]
+    laps = summarize_per_lap(ps)
+    assert [n for n, _ in laps] == [0, 1]
+    assert all(s.samples == 2 for _, s in laps)
+
+
+def test_format_per_lap_needs_two_laps():
+    ps = [TelemetryPacket.from_bytes(make_packet(lap_number=n)) for n in (0, 0)]
+    assert format_per_lap(summarize_per_lap(ps)) == ""
+    ps.append(TelemetryPacket.from_bytes(make_packet(lap_number=1)))
+    text = format_per_lap(summarize_per_lap(ps))
+    assert "Per-lap breakdown" in text
+    assert "lap 0:" in text and "lap 1:" in text

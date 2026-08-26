@@ -162,6 +162,28 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
     )
 
 
+def summarize_per_lap(packets: Iterable[TelemetryPacket]) -> list[tuple[int, SessionSummary]]:
+    """One SessionSummary per observed lap_number, in lap order."""
+    by_lap: dict[int, list[TelemetryPacket]] = {}
+    for p in packets:
+        by_lap.setdefault(p.lap_number, []).append(p)
+    return [(n, summarize(ps)) for n, ps in sorted(by_lap.items())]
+
+
+def format_per_lap(laps: list[tuple[int, SessionSummary]]) -> str:
+    """Per-lap table; empty until there are at least two laps to compare."""
+    if len(laps) < 2:
+        return ""
+    lines = ["=== Per-lap breakdown ==="]
+    for n, s in laps:
+        lines.append(
+            f"lap {n}: avg {s.avg_speed_kmh:.1f} km/h max {s.max_speed_kmh:.1f}"
+            f"  grip loss f/r {s.grip_loss_front_pct:.0f}%/{s.grip_loss_rear_pct:.0f}%"
+            f"  redline {s.redline_pct:.0f}%"
+        )
+    return "\n".join(lines)
+
+
 def format_report(s: SessionSummary) -> str:
     return "\n".join(
         [

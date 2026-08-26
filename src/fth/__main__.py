@@ -1,4 +1,5 @@
-"""CLI entry points: `fth` (live readout) and `fth analyze` (session report)."""
+"""CLI entry points: `fth` (live readout), `fth analyze` (session report)
+and `fth dashboard` (local web dashboard)."""
 
 from __future__ import annotations
 
@@ -6,9 +7,22 @@ import argparse
 import sys
 
 from fth.advisor import advise
+from fth.dashboard import serve
 from fth.ingest import TelemetryPacket, listen
-from fth.session import CsvRecorder, format_report, load_csv, summarize
+from fth.session import (
+    CsvRecorder,
+    format_per_lap,
+    format_report,
+    load_csv,
+    summarize,
+    summarize_per_lap,
+)
 from fth.tuning import format_suggestions, suggest
+
+
+def _load(log: str):
+    with open(log, newline="") as stream:
+        return [p for p in load_csv(stream) if p.is_race_on]
 
 
 def _live(args: argparse.Namespace) -> None:
@@ -46,15 +60,27 @@ def _live_line(pkt: TelemetryPacket) -> str:
 
 
 def _analyze(args: argparse.Namespace) -> None:
-    with open(args.log, newline="") as stream:
-        packets = [p for p in load_csv(stream) if p.is_race_on]
+    packets = _load(args.log)
     summary = summarize(packets)
-    print(format_report(summary))
-    print()
-    if args.ai:
-        print(advise(summary))
+    sections = [format_report(summary)]
+    per_lap = format_per_lap(summarize_per_lap(packets))
+    if per_lap:
+        sections.append(per_lap)
+    sections.append(advise(summary) if args.ai else format_suggestions(suggest(summary)))
+    report = "\n\n".join(sections) + "\n"
+    if args.out:
+        with open(args.out, "w") as f:
+            f.write(report)
+        print(f"Report saved to {args.out}")
     else:
-        print(format_suggestions(suggest(summary)))
+        print(report, end="")
+
+
+def _dashboard(args: argparse.Namespace) -> None:
+    try:
+        serve(_load(args.log), host=args.host, port=args.port)
+    except KeyboardInterrupt:
+        print()
 
 
 def main() -> None:
@@ -76,13 +102,21 @@ def main() -> None:
         action="store_true",
         help="AI advisor (env: FTH_AI_URL, FTH_AI_KEY, FTH_AI_MODEL); falls back to rules",
     )
+    p_an.add_argument("--out", metavar="FILE", help="write the report to a file instead of stdout")
+
+    p_dash = sub.add_parser("dashboard", help="serve a local web dashboard from a recorded CSV")
+    p_dash.add_argument("log", help="CSV file recorded with `fth live --csv`")
+    p_dash.add_argument("--host", default="127.0.0.1", help="address to bind (default: 127.0.0.1)")
+    p_dash.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
 
     # `fth` (bare) and `fth --csv …` default to live mode
     first = sys.argv[1] if len(sys.argv) > 1 else ""
-    argv = sys.argv[1:] if first in ("live", "analyze") else ["live", *sys.argv[1:]]
+    argv = sys.argv[1:] if first in ("live", "analyze", "dashboard") else ["live", *sys.argv[1:]]
     args = parser.parse_args(argv)
     if args.cmd == "live":
         _live(args)
+    elif args.cmd == "dashboard":
+        _dashboard(args)
     else:
         _analyze(args)
 
