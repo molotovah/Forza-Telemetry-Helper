@@ -53,42 +53,47 @@ In FH6: **Settings > HUD and Gameplay**
 
 ## Usage
 
+### The app — one command while you play
+
+```sh
+fth                # web app on http://127.0.0.1:8000 + live UDP telemetry
+```
+
+This is all you need while playing. The browser window opens by itself with
+three tabs:
+
+- **Drive** — live charts (speed/RPM, tire temps, grip loss), session summary
+  and a car card (ID, class code, performance index, drivetrain, cylinders)
+  as soon as you're on the road. Charts get lap markers.
+- **Tune** — rule-engine suggestions updating live, plus a *Generate AI tuning
+  plan* button that sends your whole session to the configured model.
+- **Settings** — paste your OpenRouter API key, pick a model
+  (`stealth/ox-alpha` by default), set the reasoning effort. Saved locally to
+  `~/.fth/config.json`; the key is never sent anywhere except the model
+  endpoint.
+
+Options: `fth --host 127.0.0.1 --port 8000 --udp-port 20777`.
+
+If the game runs on another device, bind the LAN interface: `fth --host 0.0.0.0`.
+
 ### Try it without a car
 
 The repo ships a synthetic session — no game needed:
 
 ```sh
+fth dashboard examples/session.csv    # same UI over recorded data → port 8000
 fth analyze examples/session.csv      # text report + tuning suggestions
-fth dashboard examples/session.csv    # web dashboard → http://127.0.0.1:8000
 ```
 
-### Use case 1 — real-time readout while driving
+### Terminal workflow (alternative)
 
-Watch speed, RPM, gear and tire temps update live as you drive:
+Prefer the command line? Record and analyze from the shell:
 
 ```sh
-fth                          # binds udp://127.0.0.1:20777 (Ctrl+C to quit)
-fth --host 0.0.0.0           # game runs on another device? bind all interfaces
+fth live --csv session.csv     # terminal readout + record packets to CSV
+fth analyze session.csv        # report + suggestions (--ai adds the AI plan)
+fth analyze session.csv --out report.txt   # save the report instead of printing
 ```
-
-### Use case 2 — record, analyze, tune (the core loop)
-
-1. Record one or more clean laps to CSV while driving:
-
-```sh
-fth live --csv session.csv
-```
-
-2. Get the report and apply the suggested changes in FH6's tuning menu:
-
-```sh
-fth analyze session.csv
-fth analyze session.csv --out report.txt   # save it instead of printing
-```
-
-3. Drive again with the new setup, record `session2.csv`, and compare the two
-reports — per-lap breakdown and grip-loss numbers show whether the change
-worked.
 
 Example output:
 
@@ -124,43 +129,27 @@ lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
 Suggestions can cover tires, alignment, anti-roll bars, springs, gearing,
 brakes, differential and aero — whichever problems your data actually shows.
 
-### Use case 3 — AI tuning plan via OpenRouter
+### AI advisor settings
 
-Beyond the rules engine, get a prioritized plan written by **Ox Alpha**
-(`stealth/ox-alpha`), which reads your full summary, per-lap table and rule
-suggestions:
+The key/model configured in the dashboard's Settings tab are used everywhere.
+Environment variables override the file if both are set:
 
-```sh
-export FTH_AI_KEY="sk-or-v1-…"       # create one at https://openrouter.ai/keys
-fth analyze session.csv --ai         # falls back to rules on any API error
-```
-
-Optional overrides: `FTH_AI_MODEL` (any OpenRouter model ID),
-`FTH_AI_URL` (any OpenAI-compatible endpoint), `FTH_AI_TIMEOUT`,
-`FTH_AI_REASONING` (`low|high|max`, ox-alpha effort).
-
-### Use case 4 — web dashboard
-
-Charts (speed/RPM, tire temps, grip loss) in your browser, with lap markers:
-
-```sh
-fth dashboard session.csv            # from a recording, port 8000
-fth dashboard --live                 # fed directly by the UDP stream
-fth dashboard session.csv --port 9000   # custom HTTP port; --udp-port for live
-```
-
-In live mode the page polls every 2 s, shows "waiting for telemetry…" until
-you drive, and resets automatically when you return to the menu and start a
-new session.
+| Variable         | Default                                          |
+| ---------------- | ------------------------------------------------ |
+| `FTH_AI_KEY`     | *(none — or the key saved in the dashboard)*     | 
+| `FTH_AI_MODEL`   | `stealth/ox-alpha` via [OpenRouter](https://openrouter.ai/stealth/ox-alpha) |
+| `FTH_AI_URL`     | OpenRouter chat completions endpoint             |
+| `FTH_AI_TIMEOUT` | `45` seconds                                     |
+| `FTH_AI_REASONING` | *(model default)* — `low`, `high` or `max`     |
 
 ## Command reference
 
 | Command                              | What it does                                    |
 | ------------------------------------ | ----------------------------------------------- |
-| `fth`                                | live readout (defaults: host `127.0.0.1`, UDP 20777) |
-| `fth live --csv FILE`                | live readout + record packets to CSV            |
-| `fth analyze FILE [--out F] [--ai]`  | session report (+ AI plan), print or save       |
-| `fth dashboard [FILE] [--live]`      | local web dashboard from CSV or live UDP        |
+| `fth`                                | launches the web app with live telemetry        |
+| `fth dashboard [FILE] [--live]`      | same UI from a CSV recording                    |
+| `fth live [--csv FILE]`              | terminal-only readout (+ record to CSV)         |
+| `fth analyze FILE [--out F] [--ai]`  | text report (+ AI plan), print or save          |
 
 ## Roadmap
 
@@ -179,6 +168,7 @@ new session.
 | 10    | AI advisor: per-lap prompt context, configurable timeout           | ✅ done        |
 | 11    | Repo hygiene: repo-wide formatting, CI matrix 3.10–3.14, CLI tests | ✅ done        |
 | 12    | Dashboard lap markers and live session reset                       | ✅ done        |
+| 13    | Dashboard-first app: settings, AI trigger and car card in the UI   | ✅ done        |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

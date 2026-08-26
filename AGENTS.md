@@ -23,8 +23,9 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
 - `ingest.py` — 324-byte packet struct spec, `TelemetryPacket`, `listen()` UDP loop
 - `session.py` — CSV record/load, `SessionSummary`, `summarize()`, `summarize_per_lap()`, report formatting
 - `tuning.py` — rules engine mapping metrics to relative `Suggestion`s; thresholds are module-level `_CONSTANTS`
-- `advisor.py` — AI layer: OpenRouter (`stealth/ox-alpha` by default) via stdlib `urllib`; env `FTH_AI_KEY` (required), `FTH_AI_URL`, `FTH_AI_MODEL`, `FTH_AI_TIMEOUT`, `FTH_AI_REASONING`; always falls back to the rules engine on missing key or any error
-- `dashboard.py` — local web dashboard (static CSV mode + live UDP mode): single HTML page polling a `/data` JSON endpoint, Chart.js CDN, stdlib `http.server`
+- `advisor.py` — AI layer: OpenRouter (`stealth/ox-alpha` by default) via stdlib `urllib`; settings resolved defaults <- `~/.fth/config.json` <- env (`FTH_AI_*`); always falls back to the rules engine on missing key or any error
+- `config.py` — persistent user settings store (`~/.fth/config.json`, path overridable via `FTH_CONFIG`)
+- `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`), Chart.js CDN, stdlib `http.server`
 - `fixtures.py` — synthetic packet builder for tests/demos (`make_packet(**overrides)`)
 
 ## Conventions
@@ -39,7 +40,10 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
 - Metric semantics follow the official FH6 docs: slip values are normalized
   (0 = full grip, |v| > 1 = grip loss), wheel speeds in rad/s, DrivetrainType
   0=FWD / 1=RWD / 2=AWD.
-- CLI lives in `__main__.py`; subcommand dispatch handles bare `fth` → live mode.
+- The dashboard never echoes the stored API key back to the browser
+  (`key_set: bool` only). POST /settings with an empty key keeps the old one.
+- CLI lives in `__main__.py`; bare `fth` launches the live web app,
+  `fth live` is the terminal readout.
 
 ## Roadmap & releases
 

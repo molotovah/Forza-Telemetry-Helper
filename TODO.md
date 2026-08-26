@@ -17,17 +17,21 @@ names its ceiling and what would change it.
 
 ## Advisor (AI layer)
 
-- **Synchronous single attempt**: `advise()` blocks the CLI up to
+- **Synchronous single attempt**: `advise()` blocks the caller up to
   `FTH_AI_TIMEOUT` (default 45s); no retry/streaming. Accepted: streaming
-  output is over-engineering for a local CLI; raise the env var if needed.
+  output is over-engineering for a local tool; raise the env var if needed.
 - **Prompt carries aggregates and per-lap tables, not raw series** — corner-by-
   corner transients stay invisible to the model. Fixing this means shipping a
   large serialized trace; revisit only if aggregate advice disappoints.
-- **API key travels via env var** — `ps -e` can expose it. Accepted for a
-  local tool; don't build multi-user tooling on top of this.
+- **API key stored in plain text** at `~/.fth/config.json` when saved from the
+  dashboard (file perms follow umask). Accepted for a single-user local tool;
+  don't share the file, and don't build multi-user tooling on top of this.
 
 ## Dashboard
 
+- **Car card shows raw codes**: `car_ordinal` and `car_class` are game-internal
+  IDs — FH6's Data Out carries no model name, and the class-code → letter
+  (D…X) mapping is not officially documented. Displayed as-is.
 - **Live mode keeps one rolling buffer (~2-3 min)** with no persistence;
   returning to the menu clears it on the next packet (race-time reset) rather
   than archiving the previous session.
