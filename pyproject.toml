@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "forza-telemetry-helper"
-version = "0.5.0"
+version = "0.6.0"
 description = "AI-assisted tuning advisor for Forza Horizon 6: reads the game's UDP Data Out telemetry stream and turns it into data-driven car setup suggestions."
 readme = "README.md"
 license = "MIT"

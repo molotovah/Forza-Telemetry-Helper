@@ -58,6 +58,7 @@ fth live --csv session.csv     # same + record raw packets to CSV
 fth analyze session.csv        # session report from a recorded log
 fth analyze session.csv --out report.txt   # same, written to a file
 fth dashboard session.csv      # local web dashboard with charts (port 8000)
+fth dashboard --live           # same, fed directly by the UDP stream
 ```
 
 ### AI advisor
@@ -97,7 +98,11 @@ peak power 300 kW  peak torque 450 Nm
 | 3     | Rules-based tuning engine (tires, alignment, springs, gearing)     | ✅ done        |
 | 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | ✅ done        |
 | 5     | CLI reports + community web dashboard                              | ✅ done        |
-| 6     | Community docs, examples, contribution workflow                    | ⏳ planned      |
+| 6     | Community docs, examples, contribution workflow                    | ✅ done        |
+| 7     | Extended tuning rules: brakes, differential, aero                  | ✅ done        |
+| 8     | Live dashboard fed by the UDP stream                               | ✅ done        |
+
+Known limitations and deferred work live in [TODO.md](TODO.md).
 
 ## Protocol notes (FH6 specifics)
 

@@ -24,7 +24,7 @@ ruff format <touched files>    # repo is NOT format-clean overall; only format f
 - `session.py` — CSV record/load, `SessionSummary`, `summarize()`, `summarize_per_lap()`, report formatting
 - `tuning.py` — rules engine mapping metrics to relative `Suggestion`s; thresholds are module-level `_CONSTANTS`
 - `advisor.py` — AI layer: OpenAI-compatible chat endpoint via stdlib `urllib`; env `FTH_AI_URL`/`FTH_AI_KEY`/`FTH_AI_MODEL`; always falls back to the rules engine on missing config or any error
-- `dashboard.py` — local web dashboard: single self-contained HTML page (Chart.js CDN) served by stdlib `http.server`
+- `dashboard.py` — local web dashboard (static CSV mode + live UDP mode): single HTML page polling a `/data` JSON endpoint, Chart.js CDN, stdlib `http.server`
 - `fixtures.py` — synthetic packet builder for tests/demos (`make_packet(**overrides)`)
 
 ## Conventions
@@ -34,11 +34,16 @@ ruff format <touched files>    # repo is NOT format-clean overall; only format f
   `fth.fixtures.make_packet` for synthetic data. No test frameworks beyond pytest.
 - Tuning suggestions are always **relative** to the user's current setup
   (the game's Data Out stream is one-way; current tune values are unknown).
-- Rule thresholds live as named constants at the top of `tuning.py`.
+- Rule thresholds live as named constants at the top of `tuning.py` and
+  `session.py`; most are uncalibrated guesses — see TODO.md before trusting them.
+- Metric semantics follow the official FH6 docs: slip values are normalized
+  (0 = full grip, |v| > 1 = grip loss), wheel speeds in rad/s, DrivetrainType
+  0=FWD / 1=RWD / 2=AWD.
 - CLI lives in `__main__.py`; subcommand dispatch handles bare `fth` → live mode.
 
 ## Roadmap & releases
 
-Roadmap table lives in README.md; keep it in sync. One commit per roadmap
-phase, conventional-commit style (`feat: … (phase N)`). Bump the version in
-`pyproject.toml` per shipped phase. See CONTRIBUTING.md for contributor flow.
+Roadmap table lives in README.md; keep it in sync, along with TODO.md for
+technical debt. One commit per roadmap phase, conventional-commit style
+(`feat: … (phase N)`). Bump the version in `pyproject.toml` per shipped phase.
+See CONTRIBUTING.md for contributor flow.
