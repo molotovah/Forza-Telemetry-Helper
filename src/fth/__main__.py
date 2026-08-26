@@ -7,7 +7,7 @@ import argparse
 import sys
 
 from fth.advisor import advise
-from fth.dashboard import serve
+from fth.dashboard import serve, serve_live
 from fth.ingest import TelemetryPacket, listen
 from fth.session import (
     CsvRecorder,
@@ -78,7 +78,10 @@ def _analyze(args: argparse.Namespace) -> None:
 
 def _dashboard(args: argparse.Namespace) -> None:
     try:
-        serve(_load(args.log), host=args.host, port=args.port)
+        if args.live:
+            serve_live(host=args.host, port=args.port, udp_port=args.udp_port)
+        else:
+            serve(_load(args.log), host=args.host, port=args.port)
     except KeyboardInterrupt:
         print()
 
@@ -105,9 +108,17 @@ def main() -> None:
     p_an.add_argument("--out", metavar="FILE", help="write the report to a file instead of stdout")
 
     p_dash = sub.add_parser("dashboard", help="serve a local web dashboard from a recorded CSV")
-    p_dash.add_argument("log", help="CSV file recorded with `fth live --csv`")
+    p_dash.add_argument(
+        "log", nargs="?", help="CSV file recorded with `fth live --csv` (required unless --live)"
+    )
     p_dash.add_argument("--host", default="127.0.0.1", help="address to bind (default: 127.0.0.1)")
     p_dash.add_argument("--port", type=int, default=8000, help="HTTP port (default: 8000)")
+    p_dash.add_argument(
+        "--live", action="store_true", help="serve live telemetry instead of a CSV log"
+    )
+    p_dash.add_argument(
+        "--udp-port", type=int, default=20777, help="UDP port for --live (default: 20777)"
+    )
 
     # `fth` (bare) and `fth --csv …` default to live mode
     first = sys.argv[1] if len(sys.argv) > 1 else ""

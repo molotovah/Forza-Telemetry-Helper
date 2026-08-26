@@ -1,10 +1,12 @@
-"""Tests for the local web dashboard (data shape, downsampling, HTTP page)."""
+"""Tests for the web dashboard: /data endpoint, static and live modes."""
 
 import json
+import socket
 import threading
+import time
 import urllib.request
 
-from fth.dashboard import _MAX_POINTS, _dashboard_data, make_server, render_page
+from fth.dashboard import _MAX_POINTS, _dashboard_data, make_live_server, make_server
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
 
@@ -23,6 +25,11 @@ def _packets(n: int) -> list[TelemetryPacket]:
     ]
 
 
+def _get(url: str) -> tuple[int, str, str]:
+    with urllib.request.urlopen(url, timeout=5) as resp:
+        return resp.status, resp.headers["Content-Type"], resp.read().decode()
+
+
 def test_dashboard_data_shape():
     data = _dashboard_data(_packets(25))
     assert data["summary"]["samples"] == 25
@@ -37,27 +44,81 @@ def test_series_downsampled():
     assert len(data["series"]["t"]) <= _MAX_POINTS + 1
 
 
-def test_render_page_embeds_json():
-    page = render_page(_dashboard_data(_packets(4)))
-    assert "__DATA__" not in page
-    assert '"balance_hint"' in page
-    # the embedded JSON must parse back out of the script tag
-    payload = page.split("const DATA = ", 1)[1].split(";\n", 1)[0]
-    assert json.loads(payload)["summary"]["samples"] == 4
-
-
-def test_http_roundtrip():
-    httpd = make_server(_packets(6), host="127.0.0.1", port=0)  # ephemeral port
+def test_http_page_and_data():
+    httpd = make_server(lambda: _dashboard_data(_packets(6)), host="127.0.0.1", port=0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
     thread.start()
     try:
-        url = f"http://{httpd.server_address[0]}:{httpd.server_port}/"
-        with urllib.request.urlopen(url, timeout=5) as resp:
-            body = resp.read().decode()
-            assert resp.status == 200
-            assert "text/html" in resp.headers["Content-Type"]
-        assert "Forza Telemetry Helper — session dashboard" in body
-        assert '"speed_kmh"' in body
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+
+        status, ctype, page = _get(base + "/")
+        assert status == 200
+        assert "text/html" in ctype
+        assert "Forza Telemetry Helper — session dashboard" in page
+        assert 'fetch("/data")' in page
+
+        status, ctype, payload = _get(base + "/data")
+        assert status == 200
+        assert "application/json" in ctype
+        assert json.loads(payload)["summary"]["samples"] == 6
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_provider_updates_between_polls():
+    """The live path: same server, fresh JSON each request."""
+    ps: list[TelemetryPacket] = []
+    httpd = make_server(lambda: _dashboard_data(ps) if len(ps) >= 2 else None)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}/data"
+
+        _, _, payload = _get(base)
+        assert json.loads(payload) == {"waiting": True}
+
+        ps.extend(_packets(3))
+        _, _, payload = _get(base)
+        assert json.loads(payload)["summary"]["samples"] == 3
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_live_server_receives_udp_packets():
+    """End to end: UDP datagrams in -> /data JSON out."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for i in range(4):
+            sock.sendto(
+                make_packet(speed=50.0 + i, current_race_time=float(i)),
+                ("127.0.0.1", udp_port),
+            )
+        sock.close()
+
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}/data"
+        payload = None
+        for _ in range(50):  # up to ~5s for the feeder thread to process
+            try:
+                _, _, payload = _get(base)
+            except OSError:
+                payload = None
+            if payload and "waiting" not in payload:
+                break
+            time.sleep(0.1)
+
+        data = json.loads(payload)
+        assert data["summary"]["samples"] == 4
+        assert data["summary"]["max_speed_kmh"] == (53.0 * 3.6)
     finally:
         httpd.shutdown()
         httpd.server_close()

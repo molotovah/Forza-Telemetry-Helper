@@ -1,23 +1,28 @@
-"""Minimal local web dashboard: one self-contained HTML page (Chart.js from
-CDN) with the session summary and telemetry charts embedded as JSON.
+"""Local web dashboard over recorded or live FH6 telemetry.
 
-Served with the stdlib http.server on 127.0.0.1 — nothing leaves the machine
-except the Chart.js library request to the CDN.
+Static mode (`fth dashboard session.csv`): one HTML page whose charts are fed
+by a /data endpoint generated once from the CSV.
+Live mode (`fth dashboard --live`): the same page polls /data every 2s while a
+daemon thread fills a rolling buffer from the game's UDP stream.
+Chart.js comes from a CDN; everything else is stdlib.
 """
 
 from __future__ import annotations
 
 import json
+import sys
 import threading
 import webbrowser
+from collections import deque
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
-from typing import Iterable
+from typing import Callable, Iterable
 
-from fth.ingest import TelemetryPacket
+from fth.ingest import TelemetryPacket, listen
 from fth.session import summarize, summarize_per_lap
 
 _MAX_POINTS = 500  # downsample long sessions so the page stays light
+_BUFFER_LEN = 4000  # rolling window of live packets (~2-3 min of driving)
 
 _PAGE = """<!doctype html>
 <html lang="en">
@@ -31,61 +36,92 @@ _PAGE = """<!doctype html>
          margin: 0; padding: 1.5rem; }
   h1 { font-size: 1.2rem; margin: 0 0 .5rem; }
   h2 { font-size: 1rem; margin: 1.5rem 0 .5rem; color: #9ab; }
-  table { border-collapse: collapse; }
   td { padding: .15rem 1rem .15rem 0; white-space: nowrap; }
   td:first-child { color: #9ab; }
-  .charts { display: grid; gap: 1.5rem; max-width: 900px; }
+  #status { color: #e5c07b; }
+  canvas { max-width: 900px; }
 </style>
 </head>
 <body>
-<h1>Forza Telemetry Helper — session dashboard</h1>
-<div id="summary"></div>
-<h2>Speed / RPM</h2><div class="charts"><canvas id="c-speed"></canvas></div>
-<h2>Tire temps (C)</h2><div class="charts"><canvas id="c-tires"></canvas></div>
-<h2>Grip loss (|combined slip| per axle)</h2>
-<div class="charts"><canvas id="c-slip"></canvas></div>
+<h1>Forza Telemetry Helper — session dashboard <span id="status"></span></h1>
+<div id="summary"><span id="status">waiting for telemetry…</span></div>
+<h2>Speed / RPM</h2><canvas id="c-speed"></canvas>
+<h2>Tire temps (C)</h2><canvas id="c-tires"></canvas>
+<h2>Grip loss (|combined slip| per axle)</h2><canvas id="c-slip"></canvas>
 <script>
-const DATA = __DATA__;
-const s = DATA.summary;
-const rows = [
-  ["samples / duration", `${s.samples} / ${s.duration_s.toFixed(1)}s`],
-  ["speed avg / max", `${s.avg_speed_kmh.toFixed(1)} / ${s.max_speed_kmh.toFixed(1)} km/h`],
-  ["redline / pedal overlap",
-   `${s.redline_pct.toFixed(1)}% / ${s.pedal_overlap_pct.toFixed(1)}%`],
-  ["grip loss front / rear",
-   `${s.grip_loss_front_pct.toFixed(1)}% / ${s.grip_loss_rear_pct.toFixed(1)}%`
-   + ` (${s.balance_hint})`],
-  ["tire temps avg f / r",
-   `${s.tire_temp_front_avg_c.toFixed(1)} / ${s.tire_temp_rear_avg_c.toFixed(1)} C`],
-  ["peak power / torque", `${s.max_power_kw.toFixed(0)} kW / ${s.max_torque_nm.toFixed(0)} Nm`],
+const CHART_DEFS = [
+  ["c-speed",
+   [{label: "km/h", key: "speed_kmh", color: "#4fc3f7"},
+    {label: "rpm", key: "rpm", color: "#ffb74d", axis: "y1"}],
+   {y: {position: "left"}, y1: {position: "right"}}],
+  ["c-tires",
+   [{label: "FL", key: "tire_fl", color: "#e57373"},
+    {label: "FR", key: "tire_fr", color: "#f06292"},
+    {label: "RL", key: "tire_rl", color: "#81c784"},
+    {label: "RR", key: "tire_rr", color: "#4db6ac"}],
+   {}],
+  ["c-slip",
+   [{label: "front", key: "slip_front", color: "#ba68c8"},
+    {label: "rear", key: "slip_rear", color: "#ffd54f"}],
+   {}],
 ];
-document.getElementById("summary").innerHTML =
-  "<table>" + rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("") + "</table>";
+const charts = {};
 
-function chart(id, labels, sets, yExtra) {
-  new Chart(document.getElementById(id), {
-    type: "line",
-    data: { labels,
-            datasets: sets.map(d => ({ label: d.label, data: d.data,
-                                       pointRadius: 0, borderWidth: d.width || 1.5,
-                                       borderColor: d.color, yAxisID: d.axis || "y" })) },
-    options: { animation: false, interaction: { mode: "index", intersect: false },
-               scales: { x: { ticks: { maxTicksLimit: 10 } }, ...yExtra } } });
+function renderSummary(s) {
+  const rows = [
+    ["samples / duration", `${s.samples} / ${s.duration_s.toFixed(1)}s`],
+    ["speed avg / max", `${s.avg_speed_kmh.toFixed(1)} / ${s.max_speed_kmh.toFixed(1)} km/h`],
+    ["redline / pedal overlap",
+     `${s.redline_pct.toFixed(1)}% / ${s.pedal_overlap_pct.toFixed(1)}%`],
+    ["grip loss front / rear",
+     `${s.grip_loss_front_pct.toFixed(1)}% / ${s.grip_loss_rear_pct.toFixed(1)}%`
+     + ` (${s.balance_hint})`],
+    ["tire temps avg f / r",
+     `${s.tire_temp_front_avg_c.toFixed(1)} / ${s.tire_temp_rear_avg_c.toFixed(1)} C`],
+    ["peak power / torque", `${s.max_power_kw.toFixed(0)} kW / ${s.max_torque_nm.toFixed(0)} Nm`],
+    ["wheelspin / lockup f-r",
+     `${s.wheelspin_pct.toFixed(1)}% / ${s.lockup_front_pct.toFixed(1)}%`
+     + ` - ${s.lockup_rear_pct.toFixed(1)}%`],
+  ];
+  document.getElementById("summary").innerHTML =
+    "<table>" + rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("") + "</table>";
 }
 
-const t = DATA.series.t;
-chart("c-speed", t,
-  [{ label: "km/h", data: DATA.series.speed_kmh, color: "#4fc3f7" },
-   { label: "rpm", data: DATA.series.rpm, color: "#ffb74d", axis: "y1" }],
-  { y: { position: "left" }, y1: { position: "right" } });
+function makeChart(id, sets, scales) {
+  return new Chart(document.getElementById(id), {
+    type: "line",
+    data: {labels: [],
+           datasets: sets.map(d => ({label: d.label, data: [], pointRadius: 0,
+                                     borderWidth: d.width || 1.5,
+                                     borderColor: d.color, yAxisID: d.axis || "y"}))},
+    options: {animation: false, interaction: {mode: "index", intersect: false}, scales}});
+}
 
-chart("c-tires", t,
-  [["FL", "#e57373"], ["FR", "#f06292"], ["RL", "#81c784"], ["RR", "#4db6ac"]]
-    .map(([k, c]) => ({ label: k, data: DATA.series["tire_" + k.toLowerCase()], color: c })));
+async function poll() {
+  let data;
+  try {
+    data = await (await fetch("/data")).json();
+  } catch {
+    return;  // server went away; keep the last frame on screen
+  }
+  if (data.waiting) {
+    document.getElementById("status").textContent = "waiting for telemetry…";
+    return;
+  }
+  document.getElementById("status").textContent = "";
+  renderSummary(data.summary);
+  const ser = data.series;
+  for (const [id, sets, scales] of CHART_DEFS) {
+    if (!charts[id]) charts[id] = makeChart(id, sets, scales);
+    const ch = charts[id];
+    ch.data.labels = ser.t;
+    ch.data.datasets.forEach(ds => { ds.data = ser[ds.key]; });
+    ch.update("none");
+  }
+}
 
-chart("c-slip", t,
-  [{ label: "front", data: DATA.series.slip_front, color: "#ba68c8" },
-   { label: "rear", data: DATA.series.slip_rear, color: "#ffd54f" }]);
+setInterval(poll, 2000);
+poll();
 </script>
 </body>
 </html>
@@ -122,20 +158,21 @@ def _dashboard_data(packets: list[TelemetryPacket]) -> dict:
     }
 
 
-def render_page(data: dict) -> str:
-    return _PAGE.replace("__DATA__", json.dumps(data))
-
-
 def make_server(
-    packets: list[TelemetryPacket], host: str = "127.0.0.1", port: int = 8000
+    provider: Callable[[], dict | None], host: str = "127.0.0.1", port: int = 8000
 ) -> HTTPServer:
-    page = render_page(_dashboard_data(packets))
+    """provider() returns the current dashboard payload, or None while waiting."""
 
     class Handler(BaseHTTPRequestHandler):
         def do_GET(self) -> None:
-            body = page.encode()
+            if self.path == "/data":
+                body = json.dumps(provider() or {"waiting": True}).encode()
+                ctype = "application/json"
+            else:
+                body = _PAGE.encode()
+                ctype = "text/html; charset=utf-8"
             self.send_response(200)
-            self.send_header("Content-Type", "text/html; charset=utf-8")
+            self.send_header("Content-Type", ctype)
             self.send_header("Content-Length", str(len(body)))
             self.end_headers()
             self.wfile.write(body)
@@ -146,8 +183,7 @@ def make_server(
     return HTTPServer((host, port), Handler)
 
 
-def serve(packets: Iterable[TelemetryPacket], host: str = "127.0.0.1", port: int = 8000) -> None:
-    httpd = make_server(list(packets), host, port)
+def _run(httpd: HTTPServer) -> None:
     url = f"http://{httpd.server_address[0]}:{httpd.server_port}/"
     print(f"Dashboard on {url} — Ctrl+C to stop.")
     threading.Timer(0.3, lambda: webbrowser.open(url)).start()
@@ -155,3 +191,36 @@ def serve(packets: Iterable[TelemetryPacket], host: str = "127.0.0.1", port: int
         httpd.serve_forever()
     finally:
         httpd.server_close()
+
+
+def serve(packets: Iterable[TelemetryPacket], host: str = "127.0.0.1", port: int = 8000) -> None:
+    """Static mode: everything is computed once from the recorded packets."""
+    data = _dashboard_data(list(packets))
+    _run(make_server(lambda: data, host, port))
+
+
+def make_live_server(
+    host: str = "127.0.0.1", port: int = 8000, udp_host: str = "127.0.0.1", udp_port: int = 20777
+) -> HTTPServer:
+    """Live mode server: a daemon thread feeds a rolling buffer from UDP."""
+    buf: deque[TelemetryPacket] = deque(maxlen=_BUFFER_LEN)
+
+    def feed() -> None:
+        try:
+            for pkt in listen(udp_host, udp_port):
+                if pkt.is_race_on:
+                    buf.append(pkt)
+        except OSError as exc:
+            print(f"fth: cannot bind udp://{udp_host}:{udp_port} ({exc})", file=sys.stderr)
+
+    def provider() -> dict | None:
+        return _dashboard_data(list(buf)) if len(buf) >= 2 else None
+
+    threading.Thread(target=feed, daemon=True).start()
+    return make_server(provider, host, port)
+
+
+def serve_live(
+    host: str = "127.0.0.1", port: int = 8000, udp_host: str = "127.0.0.1", udp_port: int = 20777
+) -> None:
+    _run(make_live_server(host, port, udp_host, udp_port))
