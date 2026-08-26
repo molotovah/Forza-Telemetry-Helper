@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import csv
 from dataclasses import dataclass
+from statistics import mode
 from typing import IO, Iterable, Iterator
 
 from fth.ingest import _INT_NAMES, _NAMES, TelemetryPacket
@@ -18,6 +19,22 @@ _REDLINE_RATIO = 0.95
 _GRIP_LOSS_THRESHOLD = 1.0
 _PEDAL_THRESHOLD = 51  # ~20% of 255
 _BALANCE_TOLERANCE_PTS = 5.0
+
+# Extended-metric thresholds (plausible starting points; calibrate against
+# real sessions before trusting them blindly).
+_DT_FWD, _DT_RWD, _DT_AWD = 0, 1, 2  # DrivetrainType per official FH6 docs
+_LOCKUP_WHEEL_RADS = 5.0  # wheel ~stopped while the car still rolls
+_LOCKUP_MIN_SPEED_KMH = 30.0
+_SPIN_SLIP_RATIO = 0.5  # driven-wheel slip under power = wheelspin
+_HS_SPEED_KMH = 120.0  # aero-relevant speed band
+
+
+def _kmh(p: TelemetryPacket) -> float:
+    return p.speed * 3.6
+
+
+def _dt_label(dt: int) -> str:
+    return ("FWD", "RWD", "AWD")[dt] if dt in (_DT_FWD, _DT_RWD, _DT_AWD) else "?"
 
 
 class CsvRecorder:
@@ -71,6 +88,12 @@ class SessionSummary:
     susp_travel_rear_max_norm: float
     max_power_kw: float
     max_torque_nm: float
+    drivetrain_type: int  # 0 FWD, 1 RWD, 2 AWD (modal value of the session)
+    lockup_front_pct: float  # braking samples with front wheels nearly stopped
+    lockup_rear_pct: float
+    wheelspin_pct: float  # driven-axle slip ratio under throttle
+    hs_grip_loss_front_pct: float  # grip loss at >= _HS_SPEED_KMH only
+    hs_grip_loss_rear_pct: float
 
 
 def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
@@ -80,19 +103,53 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
 
     speeds_kmh = [p.speed * 3.6 for p in ps]
 
-    def grip_loss_pct(front: bool) -> float:
-        attr = "tire_combined_slip_" + ("front_left" if front else "rear_left")
-        attr_r = "tire_combined_slip_" + ("front_right" if front else "rear_right")
+    def axle_grip_loss_pct(axle: str, pool: list[TelemetryPacket]) -> float:
+        if not pool:
+            return 0.0
         lost = sum(
             1
-            for p in ps
-            if abs(getattr(p, attr)) > _GRIP_LOSS_THRESHOLD
-            or abs(getattr(p, attr_r)) > _GRIP_LOSS_THRESHOLD
+            for p in pool
+            if abs(getattr(p, f"tire_combined_slip_{axle}_left")) > _GRIP_LOSS_THRESHOLD
+            or abs(getattr(p, f"tire_combined_slip_{axle}_right")) > _GRIP_LOSS_THRESHOLD
         )
-        return 100.0 * lost / len(ps)
+        return 100.0 * lost / len(pool)
 
-    front_loss = grip_loss_pct(front=True)
-    rear_loss = grip_loss_pct(front=False)
+    front_loss = axle_grip_loss_pct("front", ps)
+    rear_loss = axle_grip_loss_pct("rear", ps)
+
+    fast = [p for p in ps if _kmh(p) >= _HS_SPEED_KMH]
+
+    def lockup_pct(axle: str) -> float:
+        locked = sum(
+            1
+            for p in ps
+            if p.brake >= _PEDAL_THRESHOLD
+            and _kmh(p) >= _LOCKUP_MIN_SPEED_KMH
+            and min(
+                getattr(p, f"wheel_rotation_speed_{axle}_left"),
+                getattr(p, f"wheel_rotation_speed_{axle}_right"),
+            )
+            < _LOCKUP_WHEEL_RADS
+        )
+        return 100.0 * locked / len(ps)
+
+    drivetrain = mode(p.drivetrain_type for p in ps)
+    driven_axles = {
+        _DT_FWD: ("front",),
+        _DT_RWD: ("rear",),
+        _DT_AWD: ("front", "rear"),
+    }.get(drivetrain, ("front", "rear"))
+    spinning = sum(
+        1
+        for p in ps
+        if p.accel >= _PEDAL_THRESHOLD
+        and any(
+            getattr(p, f"tire_slip_ratio_{axle}_left") > _SPIN_SLIP_RATIO
+            or getattr(p, f"tire_slip_ratio_{axle}_right") > _SPIN_SLIP_RATIO
+            for axle in driven_axles
+        )
+    )
+
     if front_loss - rear_loss > _BALANCE_TOLERANCE_PTS:
         balance = "understeer-biased"
     elif rear_loss - front_loss > _BALANCE_TOLERANCE_PTS:
@@ -159,6 +216,12 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
         ),
         max_power_kw=max(p.power for p in ps) / 1000,
         max_torque_nm=max(p.torque for p in ps),
+        drivetrain_type=drivetrain,
+        lockup_front_pct=lockup_pct("front"),
+        lockup_rear_pct=lockup_pct("rear"),
+        wheelspin_pct=100.0 * spinning / len(ps),
+        hs_grip_loss_front_pct=axle_grip_loss_pct("front", fast),
+        hs_grip_loss_rear_pct=axle_grip_loss_pct("rear", fast),
     )
 
 
@@ -206,5 +269,13 @@ def format_report(s: SessionSummary) -> str:
                 f"{s.susp_travel_rear_max_m:.3f}"
             ),
             f"peak power {s.max_power_kw:.0f} kW  peak torque {s.max_torque_nm:.0f} Nm",
+            (
+                f"drivetrain {_dt_label(s.drivetrain_type)}  wheelspin {s.wheelspin_pct:.1f}%"
+                f"  brake lockup f/r {s.lockup_front_pct:.1f}%/{s.lockup_rear_pct:.1f}%"
+            ),
+            (
+                f"grip loss at >= {_HS_SPEED_KMH:.0f} km/h:"
+                f" front {s.hs_grip_loss_front_pct:.1f}% / rear {s.hs_grip_loss_rear_pct:.1f}%"
+            ),
         ]
     )

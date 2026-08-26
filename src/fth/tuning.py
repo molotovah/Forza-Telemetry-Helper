@@ -19,6 +19,10 @@ _MIN_SPEED_FOR_SUSP_RULE_KMH = 30.0  # ignore suspension while crawling/jumping
 _REDLINE_HIGH_PCT = 40.0  # time spent >= 95% of max RPM
 _REDLINE_LOW_PCT = 10.0
 _BALANCE_TOLERANCE_PTS = 5.0
+_LOCKUP_HIGH_PCT = 10.0  # % of samples braking with a wheel nearly stopped
+_SPIN_HIGH_PCT = 10.0  # % of samples with driven-axle slip under power
+_HS_LOSS_DIFF_PTS = 8.0  # high-speed grip-loss gap between axles -> aero
+_AERO_MIN_SPEED_KMH = 150.0  # only advise wings once speeds get meaningful
 
 
 @dataclass(slots=True)
@@ -99,6 +103,56 @@ def suggest(s: SessionSummary) -> list[Suggestion]:
                        f"engine rarely stretched ({s.redline_pct:.0f}% at redline,"
                        f" avg {s.avg_speed_kmh:.0f} km/h)")
         )
+
+    # --- Brakes: bias/pressure from wheel lockup ---
+    if s.lockup_front_pct >= _LOCKUP_HIGH_PCT and s.lockup_front_pct > s.lockup_rear_pct:
+        out.append(
+            Suggestion(
+                "Brake pressure",
+                "-reduce",
+                f"front wheels lock under braking ({s.lockup_front_pct:.0f}% of samples)",
+            )
+        )
+        out.append(Suggestion("Brake balance", "-rearward", "front axle locks first"))
+    elif s.lockup_rear_pct >= _LOCKUP_HIGH_PCT and s.lockup_rear_pct > s.lockup_front_pct:
+        out.append(
+            Suggestion(
+                "Brake balance",
+                "+forward",
+                f"rear wheels lock first ({s.lockup_rear_pct:.0f}% of samples)",
+            )
+        )
+
+    # --- Differential: acceleration locking from driven-wheel spin ---
+    if s.wheelspin_pct >= _SPIN_HIGH_PCT:
+        out.append(
+            Suggestion(
+                "Differential (acceleration)",
+                "+stiffen",
+                f"driven wheels spin under power {s.wheelspin_pct:.0f}% of the session",
+            )
+        )
+
+    # --- Aero: downforce where the car runs out of grip at high speed ---
+    if s.max_speed_kmh >= _AERO_MIN_SPEED_KMH:
+        if s.hs_grip_loss_front_pct - s.hs_grip_loss_rear_pct >= _HS_LOSS_DIFF_PTS:
+            out.append(
+                Suggestion(
+                    "Aero (front)",
+                    "+downforce",
+                    f"front loses grip at speed ({s.hs_grip_loss_front_pct:.0f}%"
+                    f" vs {s.hs_grip_loss_rear_pct:.0f}% rear)",
+                )
+            )
+        elif s.hs_grip_loss_rear_pct - s.hs_grip_loss_front_pct >= _HS_LOSS_DIFF_PTS:
+            out.append(
+                Suggestion(
+                    "Aero (rear)",
+                    "+downforce",
+                    f"rear loses grip at speed ({s.hs_grip_loss_rear_pct:.0f}%"
+                    f" vs {s.hs_grip_loss_front_pct:.0f}% front)",
+                )
+            )
 
     return out
 

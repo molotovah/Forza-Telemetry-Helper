@@ -7,6 +7,8 @@ grip loss: front 33.3% vs rear 0.0%  (understeer-biased)
 tire temps avg C: front 49.8 / rear 0.0, hottest 114.0
 max suspension travel m: front 0.000 / rear 0.000
 peak power 300 kW  peak torque 450 Nm
+drivetrain RWD  wheelspin 0.0%  brake lockup f/r 0.0%/0.0%
+grip loss at >= 120 km/h: front 32.8% / rear 0.0%
 
 === Per-lap breakdown ===
 lap 0: avg 138.4 km/h max 180.0  grip loss f/r 35%/0%  redline 0%
@@ -22,3 +24,5 @@ lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
     reason: front axle slides before the rear
 * Final drive: +higher number (shorter)
     reason: engine rarely stretched (0% at redline, avg 127 km/h)
+* Aero (front): +downforce
+    reason: front loses grip at speed (33% vs 0% rear)

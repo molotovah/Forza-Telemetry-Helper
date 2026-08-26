@@ -129,3 +129,44 @@ def test_format_per_lap_needs_two_laps():
     text = format_per_lap(summarize_per_lap(ps))
     assert "Per-lap breakdown" in text
     assert "lap 0:" in text and "lap 1:" in text
+
+
+def test_extended_metrics():
+    """RWD car: half the samples spinning under power, a quarter locking fronts,
+    fast samples losing front grip."""
+    ps = []
+    for i in range(8):
+        kw = dict(
+            drivetrain_type=1,  # RWD
+            speed=40.0,
+        )
+        if i < 4:  # wheelspin: full throttle + rear slip ratio
+            kw.update(accel=255, tire_slip_ratio_rear_left=0.9)
+        elif i < 6:  # brake lockup: braking + one stopped front wheel at speed
+            kw.update(
+                brake=255,
+                accel=0,
+                wheel_rotation_speed_front_left=0.5,
+                wheel_rotation_speed_front_right=150.0,
+                wheel_rotation_speed_rear_left=200.0,
+                wheel_rotation_speed_rear_right=200.0,
+            )
+        else:  # high-speed band with front grip loss only
+            kw.update(speed=40.0, tire_combined_slip_front_left=1.4, accel=0)
+        ps.append(TelemetryPacket.from_bytes(make_packet(**kw)))
+
+    s = summarize(ps)
+    assert s.drivetrain_type == 1
+    assert s.wheelspin_pct == pytest.approx(50.0)
+    assert s.lockup_front_pct == pytest.approx(25.0)
+    assert s.lockup_rear_pct == pytest.approx(0.0)
+    # every packet runs at 40 m/s = 144 km/h, inside the >= 120 km/h band;
+    # only the last two lose front grip
+    assert s.hs_grip_loss_front_pct == pytest.approx(25.0)
+    assert s.hs_grip_loss_rear_pct == pytest.approx(0.0)
+
+
+def test_hs_grip_loss_empty_band_is_zero():
+    s = summarize([TelemetryPacket.from_bytes(make_packet(speed=20.0))])  # 72 km/h
+    assert s.hs_grip_loss_front_pct == 0.0
+    assert s.hs_grip_loss_rear_pct == 0.0
