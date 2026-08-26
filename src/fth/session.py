@@ -9,7 +9,7 @@ compression; inputs are 0-255.
 from __future__ import annotations
 
 import csv
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from statistics import mode
 from typing import IO, Iterable, Iterator
 
@@ -29,6 +29,18 @@ _SPIN_SLIP_RATIO = 0.5  # driven-wheel slip under power = wheelspin
 _SPIN_MIN_ACCEL_MPS2 = 1.0  # forward g required, else it's corner-exit scrub
 _HS_SPEED_KMH = 120.0  # aero-relevant speed band
 
+# Unit handling: the wire format is documented in SI units, but a game running
+# with imperial display units may stream converted values instead. Everything
+# downstream (metrics, rules, CSVs) expects SI, so convert once at the edge.
+# ponytail: detection is a plausibility heuristic, not a spec — verify against
+# a real localized FH6 install before trusting "auto" (see TODO.md).
+_MPH_TO_MS = 0.44704
+_HP_TO_W = 745.699872
+_LBFT_TO_NM = 1.35581795
+_DETECT_MIN_SAMPLES = 20
+_DETECT_TEMP = 110.0  # p95 hottest-tire above this reads like F, not C
+_DETECT_SPEED = 75.0  # p95 speed above this is implausible m/s -> mph
+
 
 def _kmh(p: TelemetryPacket) -> float:
     return p.speed * 3.6
@@ -36,6 +48,59 @@ def _kmh(p: TelemetryPacket) -> float:
 
 def _dt_label(dt: int) -> str:
     return ("FWD", "RWD", "AWD")[dt] if dt in (_DT_FWD, _DT_RWD, _DT_AWD) else "?"
+
+
+def normalize_units(pkt: TelemetryPacket, system: str) -> TelemetryPacket:
+    """Copy of `pkt` converted to SI; identity for "metric".
+
+    "imperial" converts tire temps (F->C), speed (mph->m/s), power (hp->W)
+    and torque (lb-ft->Nm). Every other field is unit-free or already SI.
+    """
+    if system != "imperial":
+        return pkt
+
+    def f_to_c(t: float) -> float:
+        return (t - 32.0) * 5.0 / 9.0
+
+    return replace(
+        pkt,
+        tire_temp_front_left=f_to_c(pkt.tire_temp_front_left),
+        tire_temp_front_right=f_to_c(pkt.tire_temp_front_right),
+        tire_temp_rear_left=f_to_c(pkt.tire_temp_rear_left),
+        tire_temp_rear_right=f_to_c(pkt.tire_temp_rear_right),
+        speed=pkt.speed * _MPH_TO_MS,
+        power=pkt.power * _HP_TO_W,
+        torque=pkt.torque * _LBFT_TO_NM,
+    )
+
+
+def detect_units(packets: Iterable[TelemetryPacket]) -> str:
+    """Guess "metric" or "imperial" from physical plausibility anchors.
+
+    Fires only when BOTH anchors look imperial on enough samples:
+    p95 of per-packet hottest tire temp above ~110 and p95 speed above
+    ~75 (implausible as m/s at sustained pace, natural in mph).
+    """
+    ps = list(packets)
+    if len(ps) < _DETECT_MIN_SAMPLES:
+        return "metric"
+
+    def p95(values: list[float]) -> float:
+        return sorted(values)[int(len(values) * 0.95)]
+
+    hot = p95(
+        [
+            max(
+                p.tire_temp_front_left,
+                p.tire_temp_front_right,
+                p.tire_temp_rear_left,
+                p.tire_temp_rear_right,
+            )
+            for p in ps
+        ]
+    )
+    fast = p95([p.speed for p in ps])
+    return "imperial" if hot > _DETECT_TEMP and fast > _DETECT_SPEED else "metric"
 
 
 class CsvRecorder:

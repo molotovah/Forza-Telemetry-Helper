@@ -175,3 +175,19 @@ def test_prompt_includes_per_lap_breakdown(monkeypatch):
     # aggregates only when no packets are passed
     advise(summarize(_packets()))
     assert "Per-lap breakdown" not in captured["prompt"]
+
+
+def test_lang_fr_directs_model(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["payload"] = json.loads(req.data)
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    (tmp_path / "config.json").write_text(json.dumps({"key": "file-key", "lang": "fr"}))
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
+    assert "Reply in French" in system["content"]

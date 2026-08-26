@@ -73,10 +73,13 @@ def resolve_settings() -> dict[str, str]:
 
 
 def _chat(settings: dict[str, str], prompt: str) -> str:
+    system_text = _SYSTEM
+    if settings.get("lang") == "fr":
+        system_text += "\nReply in French (all headings, bullet points and reasons)."
     payload: dict = {
         "model": settings["model"],
         "messages": [
-            {"role": "system", "content": _SYSTEM},
+            {"role": "system", "content": system_text},
             {"role": "user", "content": prompt},
         ],
         "temperature": 0.2,

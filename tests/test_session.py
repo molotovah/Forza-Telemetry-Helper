@@ -7,9 +7,11 @@ from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
 from fth.session import (
     CsvRecorder,
+    detect_units,
     format_per_lap,
     format_report,
     load_csv,
+    normalize_units,
     summarize,
     summarize_per_lap,
 )
@@ -216,3 +218,62 @@ def test_hs_grip_loss_empty_band_is_zero():
     s = summarize([TelemetryPacket.from_bytes(make_packet(speed=20.0))])  # 72 km/h
     assert s.hs_grip_loss_front_pct == 0.0
     assert s.hs_grip_loss_rear_pct == 0.0
+
+
+def test_normalize_units_metric_is_identity():
+    pkt = TelemetryPacket.from_bytes(make_packet(speed=33.0))
+    assert normalize_units(pkt, "metric") is pkt
+
+
+def test_normalize_units_imperial_math():
+    pkt = TelemetryPacket.from_bytes(
+        make_packet(
+            tire_temp_front_left=212.0,  # 100 C
+            tire_temp_rear_right=32.0,  # 0 C
+            speed=100.0,  # mph -> 44.704 m/s
+            power=1.0,  # "1 hp" -> 745.7 W
+            torque=1.0,  # 1 lb-ft -> 1.356 Nm
+        )
+    )
+    n = normalize_units(pkt, "imperial")
+    assert n.tire_temp_front_left == pytest.approx(100.0)
+    assert n.tire_temp_rear_right == pytest.approx(0.0)
+    assert n.speed == pytest.approx(44.704, rel=1e-4)
+    assert n.power == pytest.approx(745.699872, rel=1e-6)
+    assert n.torque == pytest.approx(1.35581795, rel=1e-6)
+
+
+def _imperial_stream(n: int = 30) -> list[TelemetryPacket]:
+    return [
+        TelemetryPacket.from_bytes(
+            make_packet(
+                speed=110.0 + i * 0.2,  # mph-plausible, absurd as m/s (400 km/h)
+                tire_temp_front_left=190.0 + i % 5,
+                tire_temp_front_right=195.0,
+                tire_temp_rear_left=185.0,
+                tire_temp_rear_right=200.0,
+            )
+        )
+        for i in range(n)
+    ]
+
+
+def test_detect_units_flags_imperial_looking_stream():
+    assert detect_units(_imperial_stream()) == "imperial"
+
+
+def test_detect_units_defaults_to_metric():
+    ps = [
+        TelemetryPacket.from_bytes(make_packet(speed=40.0, tire_temp_front_left=85.0))
+        for _ in range(30)
+    ]
+    assert detect_units(ps) == "metric"
+    assert detect_units(ps[:5]) == "metric"  # not enough samples: metric
+
+
+def test_config_stores_lang_and_units(monkeypatch, tmp_path):
+    from fth import config
+
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    config.save(lang="fr", units="auto")
+    assert config.load()["lang"] == "fr"
