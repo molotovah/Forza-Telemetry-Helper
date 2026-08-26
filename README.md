@@ -53,9 +53,11 @@ In FH6: **Settings > HUD and Gameplay**
 ## Usage
 
 ```sh
-fth                          # live readout while driving (default port 20777)
-fth live --csv session.csv   # same + record raw packets to CSV
-fth analyze session.csv      # session report from a recorded log
+fth                            # live readout while driving (default port 20777)
+fth live --csv session.csv     # same + record raw packets to CSV
+fth analyze session.csv        # session report from a recorded log
+fth analyze session.csv --out report.txt   # same, written to a file
+fth dashboard session.csv      # local web dashboard with charts (port 8000)
 ```
 
 ### AI advisor
@@ -94,7 +96,7 @@ peak power 300 kW  peak torque 450 Nm
 | 2     | Session recording & feature extraction (per-lap aggregates, CSV)   | ✅ done        |
 | 3     | Rules-based tuning engine (tires, alignment, springs, gearing)     | ✅ done        |
 | 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | ✅ done        |
-| 5     | CLI reports + community web dashboard                              | ⏳ planned      |
+| 5     | CLI reports + community web dashboard                              | ✅ done        |
 | 6     | Community docs, examples, contribution workflow                    | ⏳ planned      |
 
 ## Protocol notes (FH6 specifics)

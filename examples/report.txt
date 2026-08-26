@@ -1,0 +1,24 @@
+=== Session summary ===
+samples 120  duration 119.0s  distance 0.00km
+laps 2  best lap 88.50s
+speed: avg 127.1 km/h, max 215.2 km/h
+time at redline: 0.0%  brake/throttle overlap: 0.0%
+grip loss: front 33.3% vs rear 0.0%  (understeer-biased)
+tire temps avg C: front 49.8 / rear 0.0, hottest 114.0
+max suspension travel m: front 0.000 / rear 0.000
+peak power 300 kW  peak torque 450 Nm
+
+=== Per-lap breakdown ===
+lap 0: avg 138.4 km/h max 180.0  grip loss f/r 35%/0%  redline 0%
+lap 1: avg 115.3 km/h max 197.9  grip loss f/r 32%/0%  redline 0%
+lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
+
+=== Suggested tuning changes (relative to your current setup) ===
+* Tire pressure (front): +2 psi
+    reason: avg front tire temp 50 C never reaches 70 C
+* Anti-roll bar (front): -2
+    reason: excess front grip loss (33% vs 0% rear)
+* Camber (front): +0.3 deg
+    reason: front axle slides before the rear
+* Final drive: +higher number (shorter)
+    reason: engine rarely stretched (0% at redline, avg 127 km/h)
