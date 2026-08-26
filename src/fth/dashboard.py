@@ -267,6 +267,7 @@ const I18N = {
   },
 };
 let LANG = "en";
+let modelsCache = [];
 function t(key) {
   const v = I18N[LANG][key];
   return v === undefined ? key : v;
@@ -301,8 +302,6 @@ document.getElementById("lang-toggle").onclick = async () => {
                           headers: {"Content-Type": "application/json"},
                           body: JSON.stringify({lang: next})});
 };
-applyLang(localStorage.getItem("fth-lang") || "en");
-api("/settings").then(s => { if (s.lang && s.lang !== LANG) applyLang(s.lang); });
 
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.remove("active"));
@@ -545,8 +544,6 @@ refreshCaptureStatus();
 refreshAutoCaptureStatus();
 refreshCapturesList();
 
-let modelsCache = [];
-
 function renderModelChecks() {
   const el = document.getElementById("model-checks");
   if (!modelsCache.length) {
@@ -605,6 +602,13 @@ document.getElementById("settings-form").onsubmit = async (ev) => {
   loadSettingsForm();
 };
 loadSettingsForm();
+
+// Initial language application: last, so everything it touches (charts,
+// modelsCache, poll, renderModelChecks) is already declared -- calling this
+// earlier throws a ReferenceError (TDZ) that silently aborts the rest of
+// the script, breaking every button on the page.
+applyLang(localStorage.getItem("fth-lang") || "en");
+api("/settings").then(s => { if (s.lang && s.lang !== LANG) applyLang(s.lang); });
 </script>
 </body>
 </html>
