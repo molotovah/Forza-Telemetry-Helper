@@ -21,6 +21,7 @@ _REDLINE_LOW_PCT = 10.0
 _BALANCE_TOLERANCE_PTS = 5.0
 _LOCKUP_HIGH_PCT = 10.0  # % of samples braking with a wheel nearly stopped
 _SPIN_HIGH_PCT = 10.0  # % of samples with driven-axle slip under power
+_COAST_OVERSTEER_PCT = 10.0  # % of coasting samples with rear slip
 _HS_LOSS_DIFF_PTS = 8.0  # high-speed grip-loss gap between axles -> aero
 _AERO_MIN_SPEED_KMH = 150.0  # only advise wings once speeds get meaningful
 
@@ -130,6 +131,16 @@ def suggest(s: SessionSummary) -> list[Suggestion]:
                 "Differential (acceleration)",
                 "+stiffen",
                 f"driven wheels spin under power {s.wheelspin_pct:.0f}% of the session",
+            )
+        )
+
+    # --- Differential: too much decel locking makes the rear step out on lift ---
+    if s.coast_oversteer_pct >= _COAST_OVERSTEER_PCT:
+        out.append(
+            Suggestion(
+                "Differential (deceleration)",
+                "soften",
+                f"rear slides while off throttle ({s.coast_oversteer_pct:.0f}% of samples)",
             )
         )
 

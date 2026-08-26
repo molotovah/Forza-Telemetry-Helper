@@ -8,6 +8,7 @@ tire temps avg C: front 49.8 / rear 0.0, hottest 114.0
 max suspension travel m: front 0.000 / rear 0.000
 peak power 300 kW  peak torque 450 Nm
 drivetrain RWD  wheelspin 0.0%  brake lockup f/r 0.0%/0.0%
+coast oversteer 0.0%
 grip loss at >= 120 km/h: front 32.8% / rear 0.0%
 
 === Per-lap breakdown ===

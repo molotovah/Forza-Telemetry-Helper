@@ -140,8 +140,8 @@ def test_extended_metrics():
             drivetrain_type=1,  # RWD
             speed=40.0,
         )
-        if i < 4:  # wheelspin: full throttle + rear slip ratio
-            kw.update(accel=255, tire_slip_ratio_rear_left=0.9)
+        if i < 4:  # wheelspin: full throttle + rear slip ratio + forward g
+            kw.update(accel=255, tire_slip_ratio_rear_left=0.9, acceleration_z=3.0)
         elif i < 6:  # brake lockup: braking + one stopped front wheel at speed
             kw.update(
                 brake=255,
@@ -164,6 +164,52 @@ def test_extended_metrics():
     # only the last two lose front grip
     assert s.hs_grip_loss_front_pct == pytest.approx(25.0)
     assert s.hs_grip_loss_rear_pct == pytest.approx(0.0)
+
+
+def test_wheelspin_needs_forward_acceleration():
+    """Corner-exit scrub without longitudinal g must not read as wheelspin."""
+    ps = [
+        TelemetryPacket.from_bytes(
+            make_packet(
+                accel=255,
+                tire_slip_ratio_rear_left=0.9,
+                acceleration_z=0.2,
+                drivetrain_type=1,
+            )
+        )
+        for _ in range(3)
+    ]
+    assert summarize(ps).wheelspin_pct == 0.0
+
+
+def test_lockup_is_relative_to_fastest_wheel():
+    """All four wheels slow but equal = normal braking, nobody is locked."""
+    ps = [
+        TelemetryPacket.from_bytes(
+            make_packet(
+                brake=255,
+                speed=40.0,
+                wheel_rotation_speed_front_left=30.0,
+                wheel_rotation_speed_front_right=30.0,
+                wheel_rotation_speed_rear_left=30.0,
+                wheel_rotation_speed_rear_right=30.0,
+            )
+        )
+    ]
+    s = summarize(ps)
+    assert s.lockup_front_pct == 0.0
+    assert s.lockup_rear_pct == 0.0
+
+
+def test_coast_oversteer_counts_only_when_coasting():
+    def pct(**kw):
+        base = {"tire_combined_slip_rear_left": 1.5, "accel": 0}
+        base.update(kw)
+        return summarize([TelemetryPacket.from_bytes(make_packet(**base))]).coast_oversteer_pct
+
+    assert pct() == pytest.approx(100.0)  # no pedals -> coasting
+    assert pct(accel=255) == 0.0
+    assert pct(brake=255) == 0.0
 
 
 def test_hs_grip_loss_empty_band_is_zero():

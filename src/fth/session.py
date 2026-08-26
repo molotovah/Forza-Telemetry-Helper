@@ -23,9 +23,10 @@ _BALANCE_TOLERANCE_PTS = 5.0
 # Extended-metric thresholds (plausible starting points; calibrate against
 # real sessions before trusting them blindly).
 _DT_FWD, _DT_RWD, _DT_AWD = 0, 1, 2  # DrivetrainType per official FH6 docs
-_LOCKUP_WHEEL_RADS = 5.0  # wheel ~stopped while the car still rolls
+_LOCKUP_RATIO = 0.25  # wheel spinning below 25% of the fastest wheel = locked
 _LOCKUP_MIN_SPEED_KMH = 30.0
 _SPIN_SLIP_RATIO = 0.5  # driven-wheel slip under power = wheelspin
+_SPIN_MIN_ACCEL_MPS2 = 1.0  # forward g required, else it's corner-exit scrub
 _HS_SPEED_KMH = 120.0  # aero-relevant speed band
 
 
@@ -94,6 +95,7 @@ class SessionSummary:
     wheelspin_pct: float  # driven-axle slip ratio under throttle
     hs_grip_loss_front_pct: float  # grip loss at >= _HS_SPEED_KMH only
     hs_grip_loss_rear_pct: float
+    coast_oversteer_pct: float  # rear slip while off both pedals
 
 
 def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
@@ -120,6 +122,8 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
     fast = [p for p in ps if _kmh(p) >= _HS_SPEED_KMH]
 
     def lockup_pct(axle: str) -> float:
+        """Relative detection: a wheel turning well below the fastest wheel
+        while braking is locked, regardless of tire radius."""
         locked = sum(
             1
             for p in ps
@@ -129,7 +133,13 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
                 getattr(p, f"wheel_rotation_speed_{axle}_left"),
                 getattr(p, f"wheel_rotation_speed_{axle}_right"),
             )
-            < _LOCKUP_WHEEL_RADS
+            < _LOCKUP_RATIO
+            * max(
+                p.wheel_rotation_speed_front_left,
+                p.wheel_rotation_speed_front_right,
+                p.wheel_rotation_speed_rear_left,
+                p.wheel_rotation_speed_rear_right,
+            )
         )
         return 100.0 * locked / len(ps)
 
@@ -143,10 +153,21 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
         1
         for p in ps
         if p.accel >= _PEDAL_THRESHOLD
+        and p.acceleration_z > _SPIN_MIN_ACCEL_MPS2
         and any(
             getattr(p, f"tire_slip_ratio_{axle}_left") > _SPIN_SLIP_RATIO
             or getattr(p, f"tire_slip_ratio_{axle}_right") > _SPIN_SLIP_RATIO
             for axle in driven_axles
+        )
+    )
+    coast_oversteer = sum(
+        1
+        for p in ps
+        if p.accel < _PEDAL_THRESHOLD
+        and p.brake < _PEDAL_THRESHOLD
+        and (
+            abs(p.tire_combined_slip_rear_left) > _GRIP_LOSS_THRESHOLD
+            or abs(p.tire_combined_slip_rear_right) > _GRIP_LOSS_THRESHOLD
         )
     )
 
@@ -222,6 +243,7 @@ def summarize(packets: Iterable[TelemetryPacket]) -> SessionSummary:
         wheelspin_pct=100.0 * spinning / len(ps),
         hs_grip_loss_front_pct=axle_grip_loss_pct("front", fast),
         hs_grip_loss_rear_pct=axle_grip_loss_pct("rear", fast),
+        coast_oversteer_pct=100.0 * coast_oversteer / len(ps),
     )
 
 
@@ -273,6 +295,7 @@ def format_report(s: SessionSummary) -> str:
                 f"drivetrain {_dt_label(s.drivetrain_type)}  wheelspin {s.wheelspin_pct:.1f}%"
                 f"  brake lockup f/r {s.lockup_front_pct:.1f}%/{s.lockup_rear_pct:.1f}%"
             ),
+            f"coast oversteer {s.coast_oversteer_pct:.1f}%",
             (
                 f"grip loss at >= {_HS_SPEED_KMH:.0f} km/h:"
                 f" front {s.hs_grip_loss_front_pct:.1f}% / rear {s.hs_grip_loss_rear_pct:.1f}%"

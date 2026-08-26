@@ -146,8 +146,18 @@ def test_rear_lockup_moves_balance_forward():
 
 def test_wheelspin_stiffens_diff_accel():
     s = _multi_session([
-        {"accel": 255, "tire_slip_ratio_rear_left": 0.9, "drivetrain_type": 1},
-        {"accel": 255, "tire_slip_ratio_rear_left": 0.9, "drivetrain_type": 1},
+        {
+            "accel": 255,
+            "tire_slip_ratio_rear_left": 0.9,
+            "acceleration_z": 3.0,
+            "drivetrain_type": 1,
+        },
+        {
+            "accel": 255,
+            "tire_slip_ratio_rear_left": 0.9,
+            "acceleration_z": 3.0,
+            "drivetrain_type": 1,
+        },
         {"accel": 0, "drivetrain_type": 1},
     ])
     changes = _parameters(suggest(s))
@@ -157,11 +167,31 @@ def test_wheelspin_stiffens_diff_accel():
 def test_no_wheelspin_on_coasting_axle():
     # spin on the NON-driven axle (FWD car) must not trigger the diff rule
     s = _multi_session([
-        {"accel": 255, "tire_slip_ratio_rear_left": 0.9, "drivetrain_type": 0},
-        {"accel": 255, "tire_slip_ratio_rear_left": 0.9, "drivetrain_type": 0},
+        {
+            "accel": 255,
+            "tire_slip_ratio_rear_left": 0.9,
+            "acceleration_z": 3.0,
+            "drivetrain_type": 0,
+        },
+        {
+            "accel": 255,
+            "tire_slip_ratio_rear_left": 0.9,
+            "acceleration_z": 3.0,
+            "drivetrain_type": 0,
+        },
         {"accel": 0, "drivetrain_type": 0},
     ])
     assert "Differential (acceleration)" not in _parameters(suggest(s))
+
+
+def test_coast_oversteer_softens_diff_decel():
+    s = _multi_session([
+        {"accel": 0, "tire_combined_slip_rear_left": 1.5},
+        {"accel": 0, "tire_combined_slip_rear_left": 1.5},
+        {"accel": 0},
+    ])
+    changes = _parameters(suggest(s))
+    assert changes["Differential (deceleration)"] == "soften"
 
 
 def test_high_speed_imbalance_adds_aero():
