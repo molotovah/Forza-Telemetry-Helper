@@ -101,6 +101,10 @@ peak power 300 kW  peak torque 450 Nm
 | 6     | Community docs, examples, contribution workflow                    | ✅ done        |
 | 7     | Extended tuning rules: brakes, differential, aero                  | ✅ done        |
 | 8     | Live dashboard fed by the UDP stream                               | ✅ done        |
+| 9     | Calibrated metrics: relative lockup, coast oversteer, spin gating  | ✅ done        |
+| 10    | AI advisor: per-lap prompt context, configurable timeout           | ✅ done        |
+| 11    | Repo hygiene: repo-wide formatting, CI matrix 3.10–3.14, CLI tests | ✅ done        |
+| 12    | Dashboard lap markers and live session reset                       | ✅ done        |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

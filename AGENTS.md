@@ -15,7 +15,7 @@ Not affiliated with Microsoft/Forza.
 pip install -e '.[dev]'        # setup (Python 3.10+)
 pytest -q                      # tests (CI gate)
 ruff check .                   # lint (CI gate; E,F,W,I — line length 100)
-ruff format <touched files>    # repo is NOT format-clean overall; only format files you edit
+ruff format --check .          # CI gate too — repo IS format-clean, keep it that way
 ```
 
 ## Layout (`src/fth/`)
