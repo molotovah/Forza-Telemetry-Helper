@@ -72,6 +72,27 @@ names its ceiling and what would change it.
 
 ## Dashboard
 
+- **(Resolved, keeping the postmortem.)** Reported: the Drive tab's
+  samples/duration froze (e.g. "4000 / 72.6s") and never moved again, with
+  no error shown. Root cause: `feed()`'s UDP loop (`make_live_server`) only
+  caught `OSError` around the *entire* per-packet body, meant for UDP bind
+  failures at startup — but auto-capture's save-on-lap-boundary
+  (`AutoLapRecorder._flush` -> `captures.save` -> filesystem I/O) can also
+  raise `OSError` subclasses (`PermissionError`, etc., more likely on
+  Windows) for reasons that have nothing to do with the socket. That got
+  caught by the same handler, mislabeled as "cannot bind udp://...", and —
+  worse — the exception killed the daemon thread entirely, freezing the
+  rolling buffer forever with no further sign anything was wrong. Fixed by
+  wrapping just the per-packet body in its own `except Exception`, logged
+  and skipped, so one bad packet or one failed auto-save can never take the
+  whole live session down; only a genuine bind failure (still `OSError`,
+  still only possible before the loop starts producing packets) reaches the
+  outer handler and sets `udp_error`. Reproduced with a monkeypatched
+  `captures.save` that always raises `PermissionError`
+  (`test_feed_survives_a_per_packet_exception`, test_dashboard.py) — fails
+  against the old code (freezes at 3 samples, logs the misleading "cannot
+  bind" message) and passes against the fix (reaches 5). If sample counts
+  ever freeze again, check stderr for `"error processing a packet"` first.
 - **(Resolved, keeping the postmortem.)** The Drive tab's charts silently
   plotted zero points for a while — `makeChart()`'s dataset mapping (in
   `_PAGE`'s `<script>`) built each Chart.js dataset from `CHART_DEFS` but

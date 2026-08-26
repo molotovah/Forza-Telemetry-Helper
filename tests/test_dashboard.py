@@ -475,6 +475,67 @@ def test_auto_lap_capture_saves_each_completed_lap(monkeypatch, tmp_path):
         httpd.server_close()
 
 
+def test_feed_survives_a_per_packet_exception(monkeypatch, tmp_path):
+    """A failure while processing one packet (e.g. auto-capture's save
+    raising something other than InvalidName -- a permissions error, say)
+    must not silently kill the feed thread and freeze the live buffer."""
+    monkeypatch.setenv("FTH_CAPTURES_DIR", str(tmp_path / "captures"))
+
+    def broken_save(name, packets):
+        raise PermissionError("simulated: cannot write to captures dir")
+
+    monkeypatch.setattr("fth.dashboard.captures.save", broken_save)
+
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+        _post(base + "/capture/auto", {"enabled": True})
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def send(rows):
+            for t, lap in rows:
+                sock.sendto(
+                    make_packet(speed=50.0, current_race_time=float(t), lap_number=lap),
+                    ("127.0.0.1", udp_port),
+                )
+
+        def samples():
+            for _ in range(50):
+                _, _, body = _get(base + "/data")
+                if "waiting" not in body:
+                    return json.loads(body)["summary"]["samples"]
+                time.sleep(0.1)
+            return None
+
+        # lap 0, then cross into lap 1 -- triggers the (broken) auto-save
+        send([(0, 0), (1, 0)])
+        assert samples() == 2
+        send([(0, 1)])  # lap boundary: auto_capture._flush() raises here
+
+        # the thread must keep running and keep accepting new packets
+        send([(1, 1), (2, 1)])
+        final = None
+        for _ in range(50):
+            _, _, body = _get(base + "/data")
+            final = json.loads(body)["summary"]["samples"]
+            if final >= 5:
+                break
+            time.sleep(0.1)
+        assert final == 5
+        sock.close()
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
 def test_capture_endpoints_404_in_static_mode():
     httpd = make_server(lambda: _packets(6), host="127.0.0.1", port=0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)

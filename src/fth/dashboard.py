@@ -975,24 +975,33 @@ def make_live_server(
         last_lap: int | None = None
         try:
             for pkt in listen(udp_host, udp_port):
-                if not pkt.is_race_on:
-                    continue
-                # Race time alone resets every lap in time-trial/hot-lap modes,
-                # so a dip there isn't proof of a new session. Only treat it as
-                # one when the lap number *also* fails to advance — a genuine
-                # restart (back to menu, new race) resets both.
-                if (
-                    last_t is not None
-                    and pkt.current_race_time < last_t - 1.0
-                    and last_lap is not None
-                    and pkt.lap_number <= last_lap
-                ):
-                    buf.clear()
-                buf.append(pkt)
-                capture.note(pkt)
-                auto_capture.note(pkt)
-                last_t = pkt.current_race_time
-                last_lap = pkt.lap_number
+                # Anything below is new-ish (session-reset heuristic, manual/
+                # auto capture) and touches the filesystem (captures.save).
+                # One bad packet or one failed auto-save must never kill this
+                # thread silently — that would freeze the whole live buffer
+                # forever with no visible error, which is worse than a single
+                # dropped packet. Only a bind failure (below) is fatal.
+                try:
+                    if not pkt.is_race_on:
+                        continue
+                    # Race time alone resets every lap in time-trial/hot-lap
+                    # modes, so a dip there isn't proof of a new session. Only
+                    # treat it as one when the lap number *also* fails to
+                    # advance — a genuine restart (menu, new race) resets both.
+                    if (
+                        last_t is not None
+                        and pkt.current_race_time < last_t - 1.0
+                        and last_lap is not None
+                        and pkt.lap_number <= last_lap
+                    ):
+                        buf.clear()
+                    buf.append(pkt)
+                    capture.note(pkt)
+                    auto_capture.note(pkt)
+                    last_t = pkt.current_race_time
+                    last_lap = pkt.lap_number
+                except Exception as exc:
+                    print(f"fth: error processing a packet, skipping it ({exc})", file=sys.stderr)
         except OSError as exc:
             state["udp_error"] = f"cannot bind udp://{udp_host}:{udp_port}: {exc}"
             print(f"fth: {state['udp_error']}", file=sys.stderr)
