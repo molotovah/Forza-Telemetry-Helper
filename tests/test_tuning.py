@@ -265,8 +265,16 @@ def test_non_awd_never_gets_center_diff_advice():
 def test_french_translations():
     s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
     changes = _parameters(suggest(s, lang="fr"))
-    assert changes["Pression des pneus (arrière)"] == "-2 psi"
+    assert changes["Pression des pneus (arrière)"] == "-0.1 bar"
     assert "Tire pressure" not in " ".join(changes)
+
+
+def test_french_tire_pressure_uses_bar_not_psi():
+    # France/metric convention: tire pressure is read in bar, never psi.
+    s = _summary(tire_temp_front_left=40.0, tire_temp_front_right=45.0)
+    changes = _parameters(suggest(s, lang="fr"))
+    assert "bar" in changes["Pression des pneus (avant)"]
+    assert "psi" not in changes["Pression des pneus (avant)"]
 
 
 def test_french_reasons_and_header():

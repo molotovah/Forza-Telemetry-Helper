@@ -120,9 +120,9 @@ _T = {
     },
     "fr": {
         "tire_pressure": "Pression des pneus ({axle})",
-        "tire_hot_change": "-2 psi",
+        "tire_hot_change": "-0.1 bar",
         "tire_hot_reason": "temp. pneu {axle} moy. {avg:.0f} C au-dessus de {thresh:.0f} C",
-        "tire_cold_change": "+2 psi",
+        "tire_cold_change": "+0.1 bar",
         "tire_cold_reason": "temp. pneu {axle} moy. {avg:.0f} C n'atteint jamais {thresh:.0f} C",
         "arb": "Barre anti-roulis ({axle})",
         "arb_change": "-2",

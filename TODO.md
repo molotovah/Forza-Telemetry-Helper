@@ -113,10 +113,15 @@ names its ceiling and what would change it.
   French text). Deliberate: correct-enough for a technical audience, avoids
   pulling in `Intl`/locale-data complexity for a cosmetic difference.
 - **The AI advisor's free-text reply depends on model compliance, not
-  enforcement** — `lang=="fr"` just appends "Reply in French" to the system
-  prompt (advisor.py `_chat`); nothing validates the model actually did. The
-  rules-engine fallback (used when no key is configured, i.e. most users)
-  has no such gap — its text is template-generated, not model-generated.
+  enforcement** — `_SYSTEM_FR` (advisor.py) is a full French system prompt
+  (not an appended "reply in French" afterthought — that version let a
+  reported case through in English with psi units) that also states tire
+  pressure must be in bar for French; nothing validates the model actually
+  followed either instruction, only that it was asked clearly. Weaker/
+  distilled models are the likeliest to ignore it. The rules-engine fallback
+  (used when no key is configured, i.e. most users) has no such gap — its
+  text and units (bar for `lang="fr"`, psi for `"en"`) are template-generated,
+  not model-generated.
 - **Client i18n has no automated parity check** — `I18N.en`/`I18N.fr` in
   `dashboard.py`'s `_PAGE` must have matching keys by hand; nothing in CI
   verifies it (checked manually at write time via a one-off script, not a

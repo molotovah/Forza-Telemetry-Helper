@@ -73,6 +73,7 @@ def test_ai_call_and_response(monkeypatch):
     system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
     assert "race engineer" in system["content"]
     assert "tuning menu" in system["content"]
+    assert "psi" in system["content"]  # English default -> imperial tire pressure unit
     user = next(m for m in captured["payload"]["messages"] if m["role"] == "user")
     assert "Session telemetry summary" in user["content"]
     assert "reasoning_effort" not in captured["payload"]  # opt-in only
@@ -293,4 +294,6 @@ def test_lang_fr_directs_model(monkeypatch, tmp_path):
 
     advise(summarize(_packets()))
     system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
-    assert "Reply in French" in system["content"]
+    assert "français" in system["content"]
+    assert "bar" in system["content"]
+    assert "race engineer" not in system["content"]  # French system prompt, not an appendix
