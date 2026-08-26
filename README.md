@@ -63,15 +63,20 @@ fth dashboard --live           # same, fed directly by the UDP stream
 
 ### AI advisor
 
-`fth analyze --ai` sends the session summary plus rule-engine suggestions to an
-OpenAI-compatible chat API for a prioritized tuning plan. Without it (or on any
-API error) the offline rules engine is used.
+`fth analyze --ai` sends the session summary plus rule-engine suggestions to
+**Ox Alpha** (`stealth/ox-alpha`) through [OpenRouter](https://openrouter.ai/stealth/ox-alpha)
+for a prioritized tuning plan. Without a key (or on any API error) the offline
+rules engine is used.
 
 ```sh
-export FTH_AI_URL="https://…/v1/chat/completions"   # required for --ai
-export FTH_AI_KEY="your-token"                      # required for --ai
-export FTH_AI_MODEL="ox-alpha"                      # optional (default: ox-alpha)
+export FTH_AI_KEY="sk-or-v1-…"      # create one at https://openrouter.ai/keys
 fth analyze session.csv --ai
+
+# optional overrides
+export FTH_AI_MODEL="stealth/ox-alpha"   # any OpenRouter model ID (default: this)
+export FTH_AI_URL="https://…"            # any OpenAI-compatible endpoint
+export FTH_AI_TIMEOUT="45"               # request timeout in seconds
+export FTH_AI_REASONING="high"           # ox-alpha effort: low | high | max
 ```
 
 Example report (`fth analyze`):

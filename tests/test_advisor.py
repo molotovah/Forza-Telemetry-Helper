@@ -14,7 +14,13 @@ from fth.session import summarize
 
 @pytest.fixture(autouse=True)
 def _no_ai_env(monkeypatch):
-    for name in ("FTH_AI_URL", "FTH_AI_KEY", "FTH_AI_MODEL", "FTH_AI_TIMEOUT"):
+    for name in (
+        "FTH_AI_URL",
+        "FTH_AI_KEY",
+        "FTH_AI_MODEL",
+        "FTH_AI_TIMEOUT",
+        "FTH_AI_REASONING",
+    ):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -54,24 +60,42 @@ def test_ai_call_and_response(monkeypatch):
             json.dumps({"choices": [{"message": {"content": "1. Soften front ARB"}}]}).encode()
         )
 
-    monkeypatch.setenv("FTH_AI_URL", "https://ai.example/v1/chat/completions")
     monkeypatch.setenv("FTH_AI_KEY", "secret")
     monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
 
     out = advise(summarize(_packets()))
     assert out == "1. Soften front ARB"
-    assert captured["url"] == "https://ai.example/v1/chat/completions"
+    # OpenRouter defaults with only a key set
+    assert captured["url"] == "https://openrouter.ai/api/v1/chat/completions"
     assert captured["auth"] == "Bearer secret"
-    assert captured["payload"]["model"] == "ox-alpha"
-    assert any(m["role"] == "system" for m in captured["payload"]["messages"])
-    assert "Session telemetry summary" in captured["payload"]["messages"][1]["content"]
+    assert captured["payload"]["model"] == "stealth/ox-alpha"
+    system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
+    assert "race engineer" in system["content"]
+    assert "tuning menu" in system["content"]
+    user = next(m for m in captured["payload"]["messages"] if m["role"] == "user")
+    assert "Session telemetry summary" in user["content"]
+    assert "reasoning_effort" not in captured["payload"]  # opt-in only
+
+
+def test_reasoning_effort_opt_in(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["payload"] = json.loads(req.data)
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setenv("FTH_AI_REASONING", "low")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    assert captured["payload"]["reasoning_effort"] == "low"
 
 
 def test_http_error_falls_back_to_rules(monkeypatch, capsys):
     def fake_urlopen(req, timeout):
         raise urllib.error.URLError("connection refused")
 
-    monkeypatch.setenv("FTH_AI_URL", "https://ai.example/v1/chat/completions")
     monkeypatch.setenv("FTH_AI_KEY", "secret")
     monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
 
