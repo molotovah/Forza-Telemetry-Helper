@@ -34,6 +34,8 @@ def test_dashboard_data_shape():
     data = _dashboard_data(_packets(25))
     assert data["summary"]["samples"] == 25
     assert [lap["lap"] for lap in data["laps"]] == [0, 1, 2]
+    assert [b["lap"] for b in data["lap_bounds"]] == [0, 1, 2]
+    assert data["lap_bounds"][1]["t_start"] == 10.0
     for key in ("t", "speed_kmh", "rpm", "tire_fl", "slip_front", "slip_rear"):
         assert len(data["series"][key]) == 25
         assert len(data["series"][key]) == len(data["series"]["t"])
@@ -56,6 +58,7 @@ def test_http_page_and_data():
         assert "text/html" in ctype
         assert "Forza Telemetry Helper — session dashboard" in page
         assert 'fetch("/data")' in page
+        assert 'id: "lapLines"' in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200
@@ -119,6 +122,49 @@ def test_live_server_receives_udp_packets():
         data = json.loads(payload)
         assert data["summary"]["samples"] == 4
         assert data["summary"]["max_speed_kmh"] == (53.0 * 3.6)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_live_server_resets_on_session_restart():
+    """Race time going backwards means a new session: the buffer must clear."""
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+
+        def send(times):
+            for t in times:
+                sock.sendto(
+                    make_packet(speed=50.0, current_race_time=float(t)),
+                    ("127.0.0.1", udp_port),
+                )
+
+        send([0, 1, 2, 3])
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}/data"
+
+        def samples():
+            for _ in range(50):
+                try:
+                    _, _, payload = _get(base)
+                except OSError:
+                    continue
+                if "waiting" not in payload:
+                    return json.loads(payload)["summary"]["samples"]
+                time.sleep(0.1)
+            return None
+
+        assert samples() == 4
+        send([-10, -9])  # session restart: race time went backwards
+        assert samples() == 2
+        sock.close()
     finally:
         httpd.shutdown()
         httpd.server_close()

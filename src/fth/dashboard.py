@@ -94,8 +94,33 @@ function makeChart(id, sets, scales) {
            datasets: sets.map(d => ({label: d.label, data: [], pointRadius: 0,
                                      borderWidth: d.width || 1.5,
                                      borderColor: d.color, yAxisID: d.axis || "y"}))},
-    options: {animation: false, interaction: {mode: "index", intersect: false}, scales}});
+    options: {animation: false, interaction: {mode: "index", intersect: false}, scales},
+    plugins: [lapLines]});
 }
+
+const lapLines = {
+  id: "lapLines",
+  afterDatasetsDraw(chart) {
+    const laps = chart.$laps || [];
+    if (laps.length < 2) return;
+    const labels = chart.data.labels;
+    const ctx = chart.ctx;
+    ctx.save();
+    ctx.strokeStyle = "#5c6370";
+    ctx.setLineDash([4, 4]);
+    for (let i = 1; i < laps.length; i++) {
+      const idx = labels.indexOf(laps[i].t_start);
+      if (idx < 0) continue;
+      const x = chart.scales.x.getPixelForValue(idx);
+      if (!isFinite(x)) continue;
+      ctx.beginPath();
+      ctx.moveTo(x, chart.chartArea.top);
+      ctx.lineTo(x, chart.chartArea.bottom);
+      ctx.stroke();
+    }
+    ctx.restore();
+  },
+};
 
 async function poll() {
   let data;
@@ -114,6 +139,7 @@ async function poll() {
   for (const [id, sets, scales] of CHART_DEFS) {
     if (!charts[id]) charts[id] = makeChart(id, sets, scales);
     const ch = charts[id];
+    ch.$laps = data.lap_bounds || [];
     ch.data.labels = ser.t;
     ch.data.datasets.forEach(ds => { ds.data = ser[ds.key]; });
     ch.update("none");
@@ -149,11 +175,21 @@ def _series(packets: list[TelemetryPacket]) -> dict:
     }
 
 
+def _lap_bounds(packets: list[TelemetryPacket]) -> list[dict]:
+    """Start time of each lap; a lap_number change is always a boundary."""
+    bounds: list[dict] = []
+    for p in packets:
+        if not bounds or bounds[-1]["lap"] != p.lap_number:
+            bounds.append({"lap": p.lap_number, "t_start": round(p.current_race_time, 1)})
+    return bounds
+
+
 def _dashboard_data(packets: list[TelemetryPacket]) -> dict:
     summary = summarize(packets)
     return {
         "summary": asdict(summary),
         "laps": [{"lap": n, **asdict(s)} for n, s in summarize_per_lap(packets)],
+        "lap_bounds": _lap_bounds(packets),
         "series": _series(packets),
     }
 
@@ -206,10 +242,15 @@ def make_live_server(
     buf: deque[TelemetryPacket] = deque(maxlen=_BUFFER_LEN)
 
     def feed() -> None:
+        last_t: float | None = None
         try:
             for pkt in listen(udp_host, udp_port):
-                if pkt.is_race_on:
-                    buf.append(pkt)
+                if not pkt.is_race_on:
+                    continue
+                if last_t is not None and pkt.current_race_time < last_t - 1.0:
+                    buf.clear()  # race time went backwards: fresh session
+                buf.append(pkt)
+                last_t = pkt.current_race_time
         except OSError as exc:
             print(f"fth: cannot bind udp://{udp_host}:{udp_port} ({exc})", file=sys.stderr)
 
