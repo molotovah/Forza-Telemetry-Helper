@@ -30,7 +30,8 @@ Suggestions are meant to be applied manually in FH6's tuning menu.
 ## Requirements
 
 - Python 3.10+
-- Forza Horizon 6 with telemetry enabled
+- Forza Horizon 6 with telemetry enabled — needed for live capture only;
+  `analyze`/`dashboard` also work from a recorded CSV on any machine
 
 ## Install
 
@@ -52,46 +53,114 @@ In FH6: **Settings > HUD and Gameplay**
 
 ## Usage
 
-```sh
-fth                            # live readout while driving (default port 20777)
-fth live --csv session.csv     # same + record raw packets to CSV
-fth analyze session.csv        # session report from a recorded log
-fth analyze session.csv --out report.txt   # same, written to a file
-fth dashboard session.csv      # local web dashboard with charts (port 8000)
-fth dashboard --live           # same, fed directly by the UDP stream
-```
+### Try it without a car
 
-### AI advisor
-
-`fth analyze --ai` sends the session summary plus rule-engine suggestions to
-**Ox Alpha** (`stealth/ox-alpha`) through [OpenRouter](https://openrouter.ai/stealth/ox-alpha)
-for a prioritized tuning plan. Without a key (or on any API error) the offline
-rules engine is used.
+The repo ships a synthetic session — no game needed:
 
 ```sh
-export FTH_AI_KEY="sk-or-v1-…"      # create one at https://openrouter.ai/keys
-fth analyze session.csv --ai
-
-# optional overrides
-export FTH_AI_MODEL="stealth/ox-alpha"   # any OpenRouter model ID (default: this)
-export FTH_AI_URL="https://…"            # any OpenAI-compatible endpoint
-export FTH_AI_TIMEOUT="45"               # request timeout in seconds
-export FTH_AI_REASONING="high"           # ox-alpha effort: low | high | max
+fth analyze examples/session.csv      # text report + tuning suggestions
+fth dashboard examples/session.csv    # web dashboard → http://127.0.0.1:8000
 ```
 
-Example report (`fth analyze`):
+### Use case 1 — real-time readout while driving
+
+Watch speed, RPM, gear and tire temps update live as you drive:
+
+```sh
+fth                          # binds udp://127.0.0.1:20777 (Ctrl+C to quit)
+fth --host 0.0.0.0           # game runs on another device? bind all interfaces
+```
+
+### Use case 2 — record, analyze, tune (the core loop)
+
+1. Record one or more clean laps to CSV while driving:
+
+```sh
+fth live --csv session.csv
+```
+
+2. Get the report and apply the suggested changes in FH6's tuning menu:
+
+```sh
+fth analyze session.csv
+fth analyze session.csv --out report.txt   # save it instead of printing
+```
+
+3. Drive again with the new setup, record `session2.csv`, and compare the two
+reports — per-lap breakdown and grip-loss numbers show whether the change
+worked.
+
+Example output:
 
 ```
 === Session summary ===
-samples 30  duration 2.9s  distance 1.45km
-laps 0  best lap 0.00s
-speed: avg 248.4 km/h, max 352.8 km/h
+samples 120  duration 119.0s  distance 0.00km
+laps 2  best lap 88.50s
+speed: avg 127.1 km/h, max 215.2 km/h
 time at redline: 0.0%  brake/throttle overlap: 0.0%
-grip loss: front 66.7% vs rear 0.0%  (understeer-biased)
-tire temps avg C: front 44.0 / rear 0.0, hottest 90.8
+grip loss: front 33.3% vs rear 0.0%  (understeer-biased)
+tire temps avg C: front 49.8 / rear 0.0, hottest 114.0
 max suspension travel m: front 0.000 / rear 0.000
 peak power 300 kW  peak torque 450 Nm
+drivetrain RWD  wheelspin 0.0%  brake lockup f/r 0.0%/0.0%
+coast oversteer 0.0%
+grip loss at >= 120 km/h: front 32.8% / rear 0.0%
+
+=== Per-lap breakdown ===
+lap 0: avg 138.4 km/h max 180.0  grip loss f/r 35%/0%  redline 0%
+lap 1: avg 115.3 km/h max 197.9  grip loss f/r 32%/0%  redline 0%
+lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
+
+=== Suggested tuning changes (relative to your current setup) ===
+* Tire pressure (front): +2 psi
+    reason: avg front tire temp 50 C never reaches 70 C
+* Anti-roll bar (front): -2
+    reason: excess front grip loss (33% vs 0% rear)
+* Camber (front): +0.3 deg
+    reason: front axle slides before the rear
+...
 ```
+
+Suggestions can cover tires, alignment, anti-roll bars, springs, gearing,
+brakes, differential and aero — whichever problems your data actually shows.
+
+### Use case 3 — AI tuning plan via OpenRouter
+
+Beyond the rules engine, get a prioritized plan written by **Ox Alpha**
+(`stealth/ox-alpha`), which reads your full summary, per-lap table and rule
+suggestions:
+
+```sh
+export FTH_AI_KEY="sk-or-v1-…"       # create one at https://openrouter.ai/keys
+fth analyze session.csv --ai         # falls back to rules on any API error
+```
+
+Optional overrides: `FTH_AI_MODEL` (any OpenRouter model ID),
+`FTH_AI_URL` (any OpenAI-compatible endpoint), `FTH_AI_TIMEOUT`,
+`FTH_AI_REASONING` (`low|high|max`, ox-alpha effort).
+
+### Use case 4 — web dashboard
+
+Charts (speed/RPM, tire temps, grip loss) in your browser, with lap markers:
+
+```sh
+fth dashboard session.csv            # from a recording, port 8000
+fth dashboard --live                 # fed directly by the UDP stream
+fth dashboard session.csv --port 9000   # custom HTTP port; --udp-port for live
+```
+
+In live mode the page polls every 2 s, shows "waiting for telemetry…" until
+you drive, and resets automatically when you return to the menu and start a
+new session.
+
+## Command reference
+
+| Command                              | What it does                                    |
+| ------------------------------------ | ----------------------------------------------- |
+| `fth`                                | live readout (defaults: host `127.0.0.1`, UDP 20777) |
+| `fth live --csv FILE`                | live readout + record packets to CSV            |
+| `fth analyze FILE [--out F] [--ai]`  | session report (+ AI plan), print or save       |
+| `fth dashboard [FILE] [--live]`      | local web dashboard from CSV or live UDP        |
 
 ## Roadmap
 
