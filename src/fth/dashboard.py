@@ -28,7 +28,12 @@ from fth.session import normalize_session, summarize, summarize_per_lap
 from fth.tuning import suggest
 
 _MAX_POINTS = 500  # downsample long sessions so the page stays light
-_BUFFER_LEN = 4000  # rolling window of live packets (~2-3 min of driving)
+# Rolling window of live packets feeding the Drive tab. summarize() is O(n)
+# per /data poll (every 2s) over the whole buffer -- 100_000 matches the
+# safe ceiling already documented in TODO.md ("fine up to ~10**5 samples").
+# At ~60 Hz that's roughly half an hour of continuous driving before the
+# oldest samples start rolling off; well past any real single-session length.
+_BUFFER_LEN = 100_000
 
 _PAGE = """<!doctype html>
 <html lang="en">
@@ -92,6 +97,13 @@ _PAGE = """<!doctype html>
 </nav>
 
 <section id="tab-drive" class="active">
+  <div id="drive-capture-controls">
+    <span class="hint" id="drive-capture-status-text"></span>
+    <button class="action" id="drive-capture-start"
+            data-i18n="capture_start_btn">Start capture</button>
+    <button class="action" id="drive-capture-stop"
+            data-i18n="capture_stop_btn">Stop capture</button>
+  </div>
   <div id="summary"><span class="hint" data-i18n="drive_waiting">waiting for telemetry…</span></div>
   <h2 data-i18n="drive_car_h2">Car</h2><div id="car"></div>
   <h2 data-i18n="drive_speed_h2">Speed / RPM</h2><canvas id="c-speed"></canvas>
@@ -471,6 +483,7 @@ async function poll() {
     });
     ch.update("none");
   }
+  refreshCaptureStatus();  // keep the Drive-tab quick status live while driving
 }
 setInterval(poll, 2000);
 poll();
@@ -520,13 +533,19 @@ async function refreshCaptureStatus() {
   try {
     const s = await api("/capture/status");
     if (s.error) throw new Error(s.error);
-    document.getElementById("capture-controls").hidden = false;
-    document.getElementById("capture-status-text").textContent =
+    const statusText =
       (s.recording ? t("capture_recording") : t("capture_stopped")) +
       t("capture_samples").replace("{n}", s.samples);
+    document.getElementById("capture-controls").hidden = false;
+    document.getElementById("capture-status-text").textContent = statusText;
     document.getElementById("capture-save-btn").disabled = s.samples === 0;
+    document.getElementById("drive-capture-controls").hidden = false;
+    document.getElementById("drive-capture-status-text").textContent = statusText;
+    document.getElementById("drive-capture-start").disabled = s.recording;
+    document.getElementById("drive-capture-stop").disabled = !s.recording;
   } catch {
     document.getElementById("capture-controls").hidden = true;  // static CSV mode
+    document.getElementById("drive-capture-controls").hidden = true;
   }
 }
 
@@ -556,6 +575,14 @@ document.getElementById("capture-start").onclick = async () => {
   refreshCaptureStatus();
 };
 document.getElementById("capture-stop").onclick = async () => {
+  await api("/capture/stop", {method: "POST"});
+  refreshCaptureStatus();
+};
+document.getElementById("drive-capture-start").onclick = async () => {
+  await api("/capture/start", {method: "POST"});
+  refreshCaptureStatus();
+};
+document.getElementById("drive-capture-stop").onclick = async () => {
   await api("/capture/stop", {method: "POST"});
   refreshCaptureStatus();
 };

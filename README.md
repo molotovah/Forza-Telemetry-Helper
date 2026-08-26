@@ -77,9 +77,11 @@ browser window opens by itself with four tabs:
 - **Tune** — rule-engine suggestions updating live, plus a *Generate AI tuning
   plan* button that sends your whole session to the configured model.
 - **Captures** — start/stop recording independently of the live rolling
-  buffer (that buffer is capped at ~4000 samples / 2-3 min for live-chart
+  buffer (that buffer is capped at ~100,000 samples / ~30 min for live-chart
   performance; a capture itself is not — it records everything from start to
-  stop, however long that takes). Save the recording under a name, import a
+  stop, however long that takes). Quick start/stop and a recording-status
+  indicator also live right on the Drive tab, so you don't need to switch
+  tabs to begin recording. Save the recording under a name, import a
   CSV recorded elsewhere, or delete a capture you no longer want — a Delete
   button sits next to each row in the list, and the list always reflects
   `~/.fth/captures/` as it actually is on disk (delete a file by hand and
@@ -219,6 +221,7 @@ on the badge.
 | 19    | Fixed TireTemp F→C conversion; lap-aware session reset; auto-lap capture | ✅ done  |
 | 20    | Missing tuning rules (center diff, ride height, damping) + full FR/EN i18n | ✅ done |
 | 21    | Capture delete; metric/imperial units setting independent of language | ✅ done |
+| 22    | Larger Drive-tab buffer; quick capture start/stop + status on Drive tab | ✅ done |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

@@ -123,11 +123,19 @@ names its ceiling and what would change it.
 - **Car card shows raw codes**: `car_ordinal` and `car_class` are game-internal
   IDs — FH6's Data Out carries no model name, and the class-code → letter
   (D…X) mapping is not officially documented. Displayed as-is.
-- **The Drive tab's rolling buffer (~2-3 min) is still separate from
-  captures**. Explicit recording (start/stop/save via the Captures tab) is
-  independent and must be saved before stopping or the process exits, or the
-  recorded packets are discarded — `CaptureController` in dashboard.py holds
-  them only in memory until `.save()` writes to `~/.fth/captures/`.
+- **The Drive tab's rolling buffer (`_BUFFER_LEN`, ~30 min at typical packet
+  rates as of the last bump — was 4000/~2-3 min, raised after a report that
+  it "felt stuck") is still separate from captures**. Explicit recording
+  (start/stop from the Drive tab or the Captures tab; save via the Captures
+  tab) is independent and must be saved before stopping or the process
+  exits, or the recorded packets are discarded — `CaptureController` in
+  dashboard.py holds them only in memory until `.save()` writes to
+  `~/.fth/captures/`. The rolling buffer itself is *display* history for
+  the live charts, still capped by design (`summarize()` is O(n) per 2s
+  poll — see TODO.md's Tooling/repo section) — it will start dropping the
+  oldest samples once a session runs past the cap, same as before, just at
+  a much higher ceiling. For anything longer, or anything you don't want
+  silently rolled off, use a capture instead of relying on this buffer.
 - **Auto-lap capture (`AutoLapRecorder`) drops the in-progress lap when
   disabled or the process exits** — only fully completed laps (a
   `lap_number` change while enabled) get auto-saved. Turn it off after your

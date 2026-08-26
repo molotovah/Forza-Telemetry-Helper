@@ -275,6 +275,9 @@ def test_http_page_and_data():
         assert "key: d.key" in page
         assert "capture-delete-btn" in page
         assert 'id="f-units"' in page
+        assert 'id="drive-capture-start"' in page
+        assert 'id="drive-capture-stop"' in page
+        assert 'id="drive-capture-status-text"' in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200

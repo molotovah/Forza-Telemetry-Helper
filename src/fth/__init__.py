@@ -3,4 +3,4 @@
 from fth.ingest import PACKET_SIZE, TelemetryPacket, listen
 
 __all__ = ["PACKET_SIZE", "TelemetryPacket", "listen"]
-__version__ = "0.16.1"
+__version__ = "0.17.0"
