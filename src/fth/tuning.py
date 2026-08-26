@@ -13,7 +13,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
-from fth.session import SessionSummary
+from fth.session import SessionSummary, disp_temp, temp_unit
 
 _HOT_TIRE_C = 100.0
 _COLD_TIRE_C = 70.0
@@ -40,13 +40,18 @@ _AXLE = {
     "fr": {"front": "avant", "rear": "arrière"},
 }
 
+# Tire pressure step: tied to the `units` setting (metric/imperial), not
+# `lang` — a driver can read French text and still prefer psi, or vice versa.
+_PRESSURE_STEP = {
+    "metric": {"hot": "-0.1 bar", "cold": "+0.1 bar"},
+    "imperial": {"hot": "-2 psi", "cold": "+2 psi"},
+}
+
 _T = {
     "en": {
         "tire_pressure": "Tire pressure ({axle})",
-        "tire_hot_change": "-2 psi",
-        "tire_hot_reason": "avg {axle} tire temp {avg:.0f} C is above {thresh:.0f} C",
-        "tire_cold_change": "+2 psi",
-        "tire_cold_reason": "avg {axle} tire temp {avg:.0f} C never reaches {thresh:.0f} C",
+        "tire_hot_reason": "avg {axle} tire temp {avg:.0f} {tu} is above {thresh:.0f} {tu}",
+        "tire_cold_reason": "avg {axle} tire temp {avg:.0f} {tu} never reaches {thresh:.0f} {tu}",
         "arb": "Anti-roll bar ({axle})",
         "arb_change": "-2",
         "arb_front_reason": "excess front grip loss ({front:.0f}% vs {rear:.0f}% rear)",
@@ -120,10 +125,10 @@ _T = {
     },
     "fr": {
         "tire_pressure": "Pression des pneus ({axle})",
-        "tire_hot_change": "-0.1 bar",
-        "tire_hot_reason": "temp. pneu {axle} moy. {avg:.0f} C au-dessus de {thresh:.0f} C",
-        "tire_cold_change": "+0.1 bar",
-        "tire_cold_reason": "temp. pneu {axle} moy. {avg:.0f} C n'atteint jamais {thresh:.0f} C",
+        "tire_hot_reason": "temp. pneu {axle} moy. {avg:.0f} {tu} au-dessus de {thresh:.0f} {tu}",
+        "tire_cold_reason": (
+            "temp. pneu {axle} moy. {avg:.0f} {tu} n'atteint jamais {thresh:.0f} {tu}"
+        ),
         "arb": "Barre anti-roulis ({axle})",
         "arb_change": "-2",
         "arb_front_reason": (
@@ -225,31 +230,38 @@ class Suggestion:
     reason: str
 
 
-def suggest(s: SessionSummary, lang: str = "en") -> list[Suggestion]:
+def suggest(s: SessionSummary, lang: str = "en", units: str = "metric") -> list[Suggestion]:
     lang = _lang(lang)
     t = _T[lang]
     ax = _AXLE[lang]
+    pstep = _PRESSURE_STEP.get(units, _PRESSURE_STEP["metric"])
+    tu = temp_unit(units)
     out: list[Suggestion] = []
 
     # --- Tires: pressure steers operating temperature ---
-    for axle, avg in (
+    for axle, avg_c in (
         ("front", s.tire_temp_front_avg_c),
         ("rear", s.tire_temp_rear_avg_c),
     ):
-        if avg >= _HOT_TIRE_C:
+        avg = disp_temp(avg_c, units)
+        if avg_c >= _HOT_TIRE_C:
             out.append(
                 Suggestion(
                     t["tire_pressure"].format(axle=ax[axle]),
-                    t["tire_hot_change"],
-                    t["tire_hot_reason"].format(axle=ax[axle], avg=avg, thresh=_HOT_TIRE_C),
+                    pstep["hot"],
+                    t["tire_hot_reason"].format(
+                        axle=ax[axle], avg=avg, thresh=disp_temp(_HOT_TIRE_C, units), tu=tu
+                    ),
                 )
             )
-        elif 0 < avg <= _COLD_TIRE_C:
+        elif 0 < avg_c <= _COLD_TIRE_C:
             out.append(
                 Suggestion(
                     t["tire_pressure"].format(axle=ax[axle]),
-                    t["tire_cold_change"],
-                    t["tire_cold_reason"].format(axle=ax[axle], avg=avg, thresh=_COLD_TIRE_C),
+                    pstep["cold"],
+                    t["tire_cold_reason"].format(
+                        axle=ax[axle], avg=avg, thresh=disp_temp(_COLD_TIRE_C, units), tu=tu
+                    ),
                 )
             )
 

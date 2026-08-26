@@ -17,7 +17,7 @@ lap 1: avg 115.3 km/h max 197.9  grip loss f/r 32%/0%  redline 0%
 lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
 
 === Suggested tuning changes (relative to your current setup) ===
-* Tire pressure (front): +2 psi
+* Tire pressure (front): +0.1 bar
     reason: avg front tire temp 50 C never reaches 70 C
 * Anti-roll bar (front): -2
     reason: excess front grip loss (33% vs 0% rear)

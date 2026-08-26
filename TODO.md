@@ -88,6 +88,17 @@ names its ceiling and what would change it.
   after any non-trivial change to `_PAGE`'s chart code; a page-content
   string check (`"key: d.key" in page`) now guards this exact regression,
   cheaply, without needing a browser.
+- **(Resolved, keeping the postmortem.)** `#refresh-models-btn` vanished from
+  the page on load: it lived inside `<label data-i18n="models_label">...
+  <button id="refresh-models-btn">...`, and `applyLang()` runs
+  `el.textContent = t(...)` on every `[data-i18n]` element — which silently
+  deletes and detaches any nested element. Same root cause as the chart bug
+  above (never opened in a real browser during initial development), found
+  the same way (Playwright). Fixed by moving the translatable text into a
+  sibling `<span data-i18n="...">`, not a wrapper. Structural guard added:
+  `test_no_nested_elements_inside_data_i18n_elements` (test_dashboard.py)
+  walks `_PAGE`'s HTML and fails if any `[data-i18n]` element has a nested
+  element child — catches the whole bug class, not just this one instance.
 - **Car card shows raw codes**: `car_ordinal` and `car_class` are game-internal
   IDs — FH6's Data Out carries no model name, and the class-code → letter
   (D…X) mapping is not officially documented. Displayed as-is.

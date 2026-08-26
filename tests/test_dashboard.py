@@ -7,10 +7,11 @@ import threading
 import time
 import urllib.error
 import urllib.request
+from html.parser import HTMLParser
 
 import pytest
 
-from fth.dashboard import _MAX_POINTS, _dashboard_data, make_live_server, make_server
+from fth.dashboard import _MAX_POINTS, _PAGE, _dashboard_data, make_live_server, make_server
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
 from fth.session import CsvRecorder
@@ -35,6 +36,46 @@ def _packets(n: int) -> list[TelemetryPacket]:
         )
         for i in range(n)
     ]
+
+
+_VOID_TAGS = {"br", "img", "input", "hr", "meta", "link"}
+
+
+class _I18nNestingChecker(HTMLParser):
+    """Flags any element nested inside a [data-i18n] element.
+
+    applyLang() (dashboard.py) does `el.textContent = t(...)` for every
+    [data-i18n] element -- that silently deletes and detaches any nested
+    element, including its id and event handlers. This is exactly the bug
+    that removed #refresh-models-btn (it lived inside a
+    `<label data-i18n="models_label">`), found only by loading the page in
+    a real browser. Structural check so it can't recur unnoticed.
+    """
+
+    def __init__(self) -> None:
+        super().__init__()
+        self.depth_stack: list[bool] = []
+        self.violations: list[str] = []
+
+    def handle_starttag(self, tag: str, attrs: list[tuple[str, str | None]]) -> None:
+        attr_names = {name for name, _ in attrs}
+        is_i18n = "data-i18n" in attr_names
+        inside_i18n = bool(self.depth_stack and self.depth_stack[-1])
+        if inside_i18n:
+            self.violations.append(tag)
+        if tag not in _VOID_TAGS:
+            self.depth_stack.append(inside_i18n or is_i18n)
+
+    def handle_endtag(self, tag: str) -> None:
+        if tag not in _VOID_TAGS and self.depth_stack:
+            self.depth_stack.pop()
+
+
+def test_no_nested_elements_inside_data_i18n_elements():
+    html = _PAGE.split("<script>")[0]
+    checker = _I18nNestingChecker()
+    checker.feed(html)
+    assert checker.violations == []
 
 
 def _get(url: str) -> tuple[int, str, str]:
@@ -101,6 +142,25 @@ def test_dashboard_data_localizes_suggestions_and_reports_lang():
     assert any("Pression des pneus" in it["parameter"] for it in data["suggestions"])
 
 
+def test_dashboard_data_units_field_and_stable_metric_payload():
+    from fth import config
+
+    config.save(units="imperial")
+    ps = [
+        TelemetryPacket.from_bytes(
+            make_packet(speed=40.0, current_race_time=float(i), tire_temp_rear_left=230.0)
+        )
+        for i in range(3)
+    ]
+    data = _dashboard_data(ps)
+    assert data["units"] == "imperial"
+    # summary/series stay canonical metric regardless of `units` -- the
+    # client converts for display; only the generated suggestion text
+    # (and format_report/CLI output) actually switches to imperial units.
+    assert data["summary"]["avg_speed_kmh"] == pytest.approx(40.0 * 3.6)
+    assert any("psi" in it["change"] for it in data["suggestions"])
+
+
 def test_settings_roundtrip_over_http():
     httpd = make_server(lambda: None, host="127.0.0.1", port=0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -114,6 +174,7 @@ def test_settings_roundtrip_over_http():
             "reasoning": "",
             "provider": "openrouter",
             "lang": "en",
+            "units": "metric",
         }
 
         status, body = _post(base + "/settings", {"key": "k1", "model": "vendor/m"})
@@ -126,6 +187,7 @@ def test_settings_roundtrip_over_http():
             "reasoning": "",
             "provider": "openrouter",
             "lang": "en",
+            "units": "metric",
         }
 
         # posting without a key must keep the stored one
@@ -143,6 +205,13 @@ def test_settings_roundtrip_over_http():
         _post(base + "/settings", {"lang": "fr"})
         _, _, body = _get(base + "/settings")
         assert json.loads(body)["lang"] == "fr"
+
+        # units switches and round-trips, independent of lang
+        _post(base + "/settings", {"units": "imperial"})
+        _, _, body = _get(base + "/settings")
+        cfg = json.loads(body)
+        assert cfg["units"] == "imperial"
+        assert cfg["lang"] == "fr"
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -204,6 +273,8 @@ def test_http_page_and_data():
         # name) through from CHART_DEFS, or poll()'s `ser[ds.key]` lookup is
         # always undefined and every chart silently plots zero points.
         assert "key: d.key" in page
+        assert "capture-delete-btn" in page
+        assert 'id="f-units"' in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200
@@ -451,6 +522,34 @@ def test_captures_import_over_http(monkeypatch, tmp_path):
 
         status, body = _post(base + "/captures/import", {"name": "bad", "csv": "x,y\n1,2\n"})
         assert status == 400
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_captures_delete_over_http(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CAPTURES_DIR", str(tmp_path / "captures"))
+    httpd = make_server(lambda: None, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+        buf = io.StringIO()
+        recorder = CsvRecorder(buf)
+        for pkt in _packets(3):
+            recorder.write(pkt)
+        recorder.flush()
+        _post(base + "/captures/import", {"name": "to-delete", "csv": buf.getvalue()})
+
+        status, body = _post(base + "/captures/delete", {"name": "to-delete"})
+        assert status == 200
+
+        _, _, body = _get(base + "/captures")
+        names = [c["name"] for c in json.loads(body)["captures"]]
+        assert "to-delete" not in names
+
+        status, body = _post(base + "/captures/delete", {"name": "never-existed"})
+        assert status == 404
     finally:
         httpd.shutdown()
         httpd.server_close()

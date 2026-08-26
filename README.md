@@ -77,18 +77,23 @@ browser window opens by itself with four tabs:
 - **Tune** — rule-engine suggestions updating live, plus a *Generate AI tuning
   plan* button that sends your whole session to the configured model.
 - **Captures** — start/stop recording independently of the live rolling
-  buffer, save the recording under a name, or import a CSV recorded
-  elsewhere. An *auto-capture per lap* checkbox additionally saves every
-  completed lap as its own capture automatically (named
-  `auto-lap<n>-<timestamp>`), running alongside — not instead of — the
-  manual start/stop. Saved captures live at `~/.fth/captures/<name>.csv` and
-  are listed here; open one's charts with
+  buffer (that buffer is capped at ~4000 samples / 2-3 min for live-chart
+  performance; a capture itself is not — it records everything from start to
+  stop, however long that takes). Save the recording under a name, import a
+  CSV recorded elsewhere, or delete a capture you no longer want — a Delete
+  button sits next to each row in the list, and the list always reflects
+  `~/.fth/captures/` as it actually is on disk (delete a file by hand and
+  it's gone from the list too, no restart needed). An *auto-capture per lap*
+  checkbox additionally saves every completed lap as its own capture
+  automatically (named `auto-lap<n>-<timestamp>`), running alongside — not
+  instead of — the manual start/stop. Open a saved capture's charts with
   `fth dashboard ~/.fth/captures/<name>.csv`. Recording controls only appear
   in live mode (`fth` / `fth dashboard --live`).
-- **Settings** — paste your OpenRouter API key, pick a model
-  (`stealth/ox-alpha` by default), set the reasoning effort. Saved locally to
-  `~/.fth/config.json`; the key is never sent anywhere except the model
-  endpoint.
+- **Settings** — units (metric/imperial — affects speed, tire pressure,
+  temperature, power and torque everywhere: charts, reports, tuning
+  suggestions, the AI prompt), AI provider/API key/model/reasoning effort.
+  Saved locally to `~/.fth/config.json`; the key is never sent anywhere
+  except the model endpoint.
 
 Options: `fth --host 127.0.0.1 --port 8000 --udp-port 20777`.
 
@@ -135,7 +140,7 @@ lap 1: avg 115.3 km/h max 197.9  grip loss f/r 32%/0%  redline 0%
 lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
 
 === Suggested tuning changes (relative to your current setup) ===
-* Tire pressure (front): +2 psi
+* Tire pressure (front): +0.1 bar
     reason: avg front tire temp 50 C never reaches 70 C
 * Anti-roll bar (front): -2
     reason: excess front grip loss (33% vs 0% rear)
@@ -150,6 +155,13 @@ aero — whichever problems your data actually shows. Rule text and the
 session report are generated in whichever language is set (`lang` in
 `~/.fth/config.json`, or the dashboard's EN/FR toggle); the AI advisor's
 free-text plan follows the same setting when a key is configured.
+
+Units (`units` in `~/.fth/config.json`, or the Settings tab's Units select)
+are a separate choice from language — French text with imperial units, or
+English text with metric, both work. Default is metric everywhere (speed,
+tire pressure, temperature, power, torque); pick Imperial to see mph, psi,
+°F, hp and lb-ft instead, in the dashboard, the CLI report and the AI prompt
+alike.
 
 ### AI advisor settings
 
@@ -206,6 +218,7 @@ on the badge.
 | 18    | Free/reasoning model listing + checkbox picker                     | ✅ done        |
 | 19    | Fixed TireTemp F→C conversion; lap-aware session reset; auto-lap capture | ✅ done  |
 | 20    | Missing tuning rules (center diff, ride height, damping) + full FR/EN i18n | ✅ done |
+| 21    | Capture delete; metric/imperial units setting independent of language | ✅ done |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

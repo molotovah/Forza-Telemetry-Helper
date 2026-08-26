@@ -69,6 +69,62 @@ def normalize_session(packets: Iterable[TelemetryPacket]) -> list[TelemetryPacke
     return [normalize_units(p) for p in packets]
 
 
+# Display units: a user preference (config.units, "metric"/"imperial"), fully
+# separate from the wire normalization above. Everything internal (packets,
+# SessionSummary) always stays canonical metric/Celsius; these convert only
+# at the point numbers are formatted for a report or a UI. Covers the
+# quantities Forza itself measures and that plausibly differ by convention:
+# speed, distance, tire temp, tire pressure (tuning.py), power, torque.
+_KMH_TO_MPH = 0.621371
+_KM_TO_MI = 0.621371
+_KW_TO_HP = 1.341022
+_NM_TO_LBFT = 0.737562
+
+
+def disp_speed(kmh: float, units: str) -> float:
+    return kmh * _KMH_TO_MPH if units == "imperial" else kmh
+
+
+def disp_distance(km: float, units: str) -> float:
+    return km * _KM_TO_MI if units == "imperial" else km
+
+
+def disp_temp(c: float, units: str) -> float:
+    return c * 9.0 / 5.0 + 32.0 if units == "imperial" else c
+
+
+def disp_power(kw: float, units: str) -> float:
+    return kw * _KW_TO_HP if units == "imperial" else kw
+
+
+def disp_torque(nm: float, units: str) -> float:
+    return nm * _NM_TO_LBFT if units == "imperial" else nm
+
+
+def speed_unit(units: str) -> str:
+    return "mph" if units == "imperial" else "km/h"
+
+
+def distance_unit(units: str) -> str:
+    return "mi" if units == "imperial" else "km"
+
+
+def temp_unit(units: str) -> str:
+    return "F" if units == "imperial" else "C"
+
+
+def power_unit(units: str) -> str:
+    return "hp" if units == "imperial" else "kW"
+
+
+def torque_unit(units: str) -> str:
+    return "lb-ft" if units == "imperial" else "Nm"
+
+
+def pressure_unit(units: str) -> str:
+    return "psi" if units == "imperial" else "bar"
+
+
 class CsvRecorder:
     """Writes packets to a CSV stream. Open the stream with newline="".
 
@@ -304,51 +360,53 @@ _BALANCE_LABEL = {
 _R = {
     "en": {
         "header": "=== Session summary ===",
-        "samples": "samples {samples}  duration {duration:.1f}s  distance {distance:.2f}km",
+        "samples": "samples {samples}  duration {duration:.1f}s  distance {distance:.2f}{du}",
         "laps": "laps {laps}  best lap {best_lap:.2f}s",
-        "speed": "speed: avg {avg:.1f} km/h, max {max:.1f} km/h",
+        "speed": "speed: avg {avg:.1f} {u}, max {max:.1f} {u}",
         "redline_overlap": (
             "time at redline: {redline:.1f}%  brake/throttle overlap: {overlap:.1f}%"
         ),
         "grip_loss": "grip loss: front {front:.1f}% vs rear {rear:.1f}%  ({hint})",
-        "tire_temp": "tire temps avg C: front {front:.1f} / rear {rear:.1f}, hottest {hottest:.1f}",
+        "tire_temp": (
+            "tire temps avg {tu}: front {front:.1f} / rear {rear:.1f}, hottest {hottest:.1f}"
+        ),
         "susp": "max suspension travel m: front {front:.3f} / rear {rear:.3f}",
-        "power": "peak power {power:.0f} kW  peak torque {torque:.0f} Nm",
+        "power": "peak power {power:.0f} {pu}  peak torque {torque:.0f} {tqu}",
         "drivetrain": (
             "drivetrain {dt}  wheelspin {spin:.1f}%  brake lockup f/r {lf:.1f}%/{lr:.1f}%"
         ),
         "coast": "coast oversteer {pct:.1f}%",
-        "hs_grip": "grip loss at >= {thresh:.0f} km/h: front {front:.1f}% / rear {rear:.1f}%",
+        "hs_grip": "grip loss at >= {thresh:.0f} {u}: front {front:.1f}% / rear {rear:.1f}%",
         "per_lap_header": "=== Per-lap breakdown ===",
         "per_lap_line": (
-            "lap {n}: avg {avg:.1f} km/h max {max:.1f}  grip loss f/r {front:.0f}%/{rear:.0f}%"
+            "lap {n}: avg {avg:.1f} {u} max {max:.1f}  grip loss f/r {front:.0f}%/{rear:.0f}%"
             "  redline {redline:.0f}%"
         ),
     },
     "fr": {
         "header": "=== Résumé de la session ===",
-        "samples": "échantillons {samples}  durée {duration:.1f}s  distance {distance:.2f}km",
+        "samples": "échantillons {samples}  durée {duration:.1f}s  distance {distance:.2f}{du}",
         "laps": "tours {laps}  meilleur tour {best_lap:.2f}s",
-        "speed": "vitesse : moy. {avg:.1f} km/h, max {max:.1f} km/h",
+        "speed": "vitesse : moy. {avg:.1f} {u}, max {max:.1f} {u}",
         "redline_overlap": (
             "temps à la limite : {redline:.1f}%  chevauchement frein/accél. : {overlap:.1f}%"
         ),
         "grip_loss": "perte d'adhérence : avant {front:.1f}% contre arrière {rear:.1f}%  ({hint})",
         "tire_temp": (
-            "temp. pneus moy. C : avant {front:.1f} / arrière {rear:.1f}, max {hottest:.1f}"
+            "temp. pneus moy. {tu} : avant {front:.1f} / arrière {rear:.1f}, max {hottest:.1f}"
         ),
         "susp": "débattement suspension max m : avant {front:.3f} / arrière {rear:.3f}",
-        "power": "puissance max {power:.0f} kW  couple max {torque:.0f} Nm",
+        "power": "puissance max {power:.0f} {pu}  couple max {torque:.0f} {tqu}",
         "drivetrain": (
             "transmission {dt}  patinage {spin:.1f}%  blocage freins av/ar {lf:.1f}%/{lr:.1f}%"
         ),
         "coast": "survirage en roue libre {pct:.1f}%",
         "hs_grip": (
-            "perte d'adhérence à >= {thresh:.0f} km/h : avant {front:.1f}% / arrière {rear:.1f}%"
+            "perte d'adhérence à >= {thresh:.0f} {u} : avant {front:.1f}% / arrière {rear:.1f}%"
         ),
         "per_lap_header": "=== Détail par tour ===",
         "per_lap_line": (
-            "tour {n} : moy. {avg:.1f} km/h max {max:.1f}"
+            "tour {n} : moy. {avg:.1f} {u} max {max:.1f}"
             "  perte d'adhérence av/ar {front:.0f}%/{rear:.0f}%  limite {redline:.0f}%"
         ),
     },
@@ -359,47 +417,66 @@ def _report_lang(lang: str) -> str:
     return lang if lang in _R else "en"
 
 
-def format_per_lap(laps: list[tuple[int, SessionSummary]], lang: str = "en") -> str:
+def format_per_lap(
+    laps: list[tuple[int, SessionSummary]], lang: str = "en", units: str = "metric"
+) -> str:
     """Per-lap table; empty until there are at least two laps to compare."""
     if len(laps) < 2:
         return ""
     r = _R[_report_lang(lang)]
+    u = speed_unit(units)
     lines = [r["per_lap_header"]]
     for n, s in laps:
         lines.append(
             r["per_lap_line"].format(
                 n=n,
-                avg=s.avg_speed_kmh,
-                max=s.max_speed_kmh,
+                avg=disp_speed(s.avg_speed_kmh, units),
+                max=disp_speed(s.max_speed_kmh, units),
                 front=s.grip_loss_front_pct,
                 rear=s.grip_loss_rear_pct,
                 redline=s.redline_pct,
+                u=u,
             )
         )
     return "\n".join(lines)
 
 
-def format_report(s: SessionSummary, lang: str = "en") -> str:
+def format_report(s: SessionSummary, lang: str = "en", units: str = "metric") -> str:
     lang = _report_lang(lang)
     r = _R[lang]
     hint = _BALANCE_LABEL[lang].get(s.balance_hint, s.balance_hint)
+    u, du = speed_unit(units), distance_unit(units)
+    tu, pu, tqu = temp_unit(units), power_unit(units), torque_unit(units)
     return "\n".join(
         [
             r["header"],
-            r["samples"].format(samples=s.samples, duration=s.duration_s, distance=s.distance_km),
+            r["samples"].format(
+                samples=s.samples,
+                duration=s.duration_s,
+                distance=disp_distance(s.distance_km, units),
+                du=du,
+            ),
             r["laps"].format(laps=s.laps, best_lap=s.best_lap_s),
-            r["speed"].format(avg=s.avg_speed_kmh, max=s.max_speed_kmh),
+            r["speed"].format(
+                avg=disp_speed(s.avg_speed_kmh, units), max=disp_speed(s.max_speed_kmh, units), u=u
+            ),
             r["redline_overlap"].format(redline=s.redline_pct, overlap=s.pedal_overlap_pct),
             r["grip_loss"].format(
                 front=s.grip_loss_front_pct, rear=s.grip_loss_rear_pct, hint=hint
             ),
             r["tire_temp"].format(
-                front=s.tire_temp_front_avg_c,
-                rear=s.tire_temp_rear_avg_c,
-                hottest=s.tire_temp_max_c,
+                front=disp_temp(s.tire_temp_front_avg_c, units),
+                rear=disp_temp(s.tire_temp_rear_avg_c, units),
+                hottest=disp_temp(s.tire_temp_max_c, units),
+                tu=tu,
             ),
             r["susp"].format(front=s.susp_travel_front_max_m, rear=s.susp_travel_rear_max_m),
-            r["power"].format(power=s.max_power_kw, torque=s.max_torque_nm),
+            r["power"].format(
+                power=disp_power(s.max_power_kw, units),
+                torque=disp_torque(s.max_torque_nm, units),
+                pu=pu,
+                tqu=tqu,
+            ),
             r["drivetrain"].format(
                 dt=_dt_label(s.drivetrain_type),
                 spin=s.wheelspin_pct,
@@ -408,9 +485,10 @@ def format_report(s: SessionSummary, lang: str = "en") -> str:
             ),
             r["coast"].format(pct=s.coast_oversteer_pct),
             r["hs_grip"].format(
-                thresh=_HS_SPEED_KMH,
+                thresh=disp_speed(_HS_SPEED_KMH, units),
                 front=s.hs_grip_loss_front_pct,
                 rear=s.hs_grip_loss_rear_pct,
+                u=u,
             ),
         ]
     )

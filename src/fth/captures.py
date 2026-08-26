@@ -59,6 +59,14 @@ def import_csv(name: str, text: str) -> Path:
     return path
 
 
+def delete(name: str) -> None:
+    path = _path(name)
+    try:
+        path.unlink()
+    except FileNotFoundError:
+        raise InvalidName(f"no such capture: {name!r}") from None
+
+
 def list_captures() -> list[dict]:
     out = []
     for path in sorted(_dir().glob("*.csv")):

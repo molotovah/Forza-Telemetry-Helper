@@ -25,7 +25,7 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
 - `tuning.py` — rules engine mapping metrics to relative `Suggestion`s; thresholds are module-level `_CONSTANTS`; bilingual via `lang="en"|"fr"` (template tables `_T`/`_AXLE`) threaded through `suggest()`/`format_suggestions()`
 - `advisor.py` — AI layer: OpenRouter or Groq (`_PROVIDERS` table, OpenAI-compatible chat API) via stdlib `urllib`; settings resolved provider defaults <- `~/.fth/config.json` <- env (`FTH_AI_*`); `list_models()` fetches/flags free+reasoning models per provider; always falls back to the rules engine on missing key or any error
 - `config.py` — persistent user settings store (`~/.fth/config.json`, path overridable via `FTH_CONFIG`)
-- `captures.py` — named capture storage (`~/.fth/captures/<name>.csv`, path overridable via `FTH_CAPTURES_DIR`): save/load/import/list, reuses `session.CsvRecorder`/`load_csv`
+- `captures.py` — named capture storage (`~/.fth/captures/<name>.csv`, path overridable via `FTH_CAPTURES_DIR`): save/load/import/list/delete, reuses `session.CsvRecorder`/`load_csv`; `list_captures()` globs the directory fresh each call, no caching, so an externally-deleted file simply isn't there next call — no extra invalidation needed
 - `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Captures/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`, `/captures`, `/capture/*`, `/capture/auto*`), Chart.js CDN, stdlib `http.server`. `CaptureController` (manual start/stop/save) and `AutoLapRecorder` (opt-in, saves each completed lap automatically) run independently off the same UDP feed.
 - `fixtures.py` — synthetic packet builder for tests/demos (`make_packet(**overrides)`)
 
@@ -63,7 +63,30 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
   `I18N.en` and `I18N.fr` (same key) — nothing enforces parity automatically,
   so a mismatch means one language silently shows raw key names or falls
   back through `t()`. Adding a rule-engine string: same pattern in
-  `tuning._T`/`session._R`.
+  `tuning._T`/`session._R`. **Never put `data-i18n` on an element that has
+  element children** (only plain text) — `applyLang()` does
+  `el.textContent = ...` on every `[data-i18n]` element, which silently
+  deletes and detaches any nested element, breaking its id and handlers (this
+  happened once: `#refresh-models-btn` lived inside a `data-i18n`-tagged
+  `<label>` and vanished on load). `test_no_nested_elements_inside_data_i18n_elements`
+  (test_dashboard.py) guards this structurally; keep it passing rather than
+  loosening it.
+- **units (metric/imperial)**: `config.units`, resolved via
+  `config.resolve_units()` — defaults to `"metric"`, deliberately **not**
+  derived from `lang` (a French-reading, imperial-preferring user is a valid
+  combination; tying them together also would have silently flipped
+  English-language output to imperial with no config change, since tire
+  pressure was hardcoded psi historically). Converts speed, tire temp, tire
+  pressure, power and torque; conversion helpers live in `session.py`
+  (`disp_speed`/`disp_temp`/`disp_power`/`disp_torque` + matching
+  `*_unit()` label getters) and are mirrored by hand in `_PAGE`'s JS
+  (`dispSpeed`/`dispTemp`/etc.) since the two aren't shared code. The `/data`
+  JSON payload (`summary`/`series`) always stays canonical metric with
+  stable field names (e.g. `avg_speed_kmh` is always really km/h) — the
+  client converts at render time, same separation as raw-wire vs. `lang`;
+  only generated *text* (suggestions, reports, the AI prompt) is
+  pre-converted server-side, because building it correctly client-side would
+  mean re-implementing the rule thresholds in JS.
 
 ## Roadmap & releases
 

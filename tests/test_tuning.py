@@ -29,13 +29,22 @@ def test_hot_tires_drop_pressure():
     s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
     changes = _parameters(suggest(s))
     assert "Tire pressure (rear)" in changes
-    assert changes["Tire pressure (rear)"] == "-2 psi"
+    assert changes["Tire pressure (rear)"] == "-0.1 bar"  # units="metric" default
     assert "Tire pressure (front)" not in changes
 
 
 def test_cold_tires_raise_pressure():
     s = _summary(tire_temp_front_left=40.0, tire_temp_front_right=45.0)
-    assert _parameters(suggest(s))["Tire pressure (front)"] == "+2 psi"
+    assert _parameters(suggest(s))["Tire pressure (front)"] == "+0.1 bar"
+
+
+def test_pressure_step_follows_units_not_lang():
+    # units is independent of lang: English text + metric bar is a valid combo.
+    s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
+    changes = _parameters(suggest(s, lang="en", units="imperial"))
+    assert changes["Tire pressure (rear)"] == "-2 psi"
+    changes = _parameters(suggest(s, lang="fr", units="imperial"))
+    assert changes["Pression des pneus (arrière)"] == "-2 psi"
 
 
 def test_understeer_softens_front_bar():

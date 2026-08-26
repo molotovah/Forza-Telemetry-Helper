@@ -38,3 +38,24 @@ def test_unknown_fields_ignored(monkeypatch, tmp_path):
     path.write_text(json.dumps({"key": "k", "evil": "x"}))
     monkeypatch.setenv("FTH_CONFIG", str(path))
     assert config.load() == {"key": "k"}
+
+
+def test_units_field_roundtrips(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    config.save(units="imperial")
+    assert config.load() == {"units": "imperial"}
+
+
+def test_resolve_units_defaults_to_metric(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    assert config.resolve_units() == "metric"
+    config.save(lang="en")  # lang alone must not flip the default to imperial
+    assert config.resolve_units() == "metric"
+
+
+def test_resolve_units_honors_explicit_choice(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    config.save(units="imperial")
+    assert config.resolve_units() == "imperial"
+    assert config.resolve_units({"units": "metric"}) == "metric"
+    assert config.resolve_units({"units": "bogus"}) == "metric"

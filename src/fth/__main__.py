@@ -66,15 +66,17 @@ def build_report(packets: list[TelemetryPacket], ai: bool = False) -> str:
     """The full `fth analyze` report text (summary, per-lap, suggestions)."""
     packets = normalize_session(packets)
     summary = summarize(packets)
-    lang = config.load().get("lang", "en")
-    sections = [format_report(summary, lang=lang)]
-    per_lap = format_per_lap(summarize_per_lap(packets), lang=lang)
+    stored = config.load()
+    lang = stored.get("lang", "en")
+    units = config.resolve_units(stored)
+    sections = [format_report(summary, lang=lang, units=units)]
+    per_lap = format_per_lap(summarize_per_lap(packets), lang=lang, units=units)
     if per_lap:
         sections.append(per_lap)
     if ai:
         sections.append(advise(summary, packets))
     else:
-        sections.append(format_suggestions(suggest(summary, lang=lang), lang=lang))
+        sections.append(format_suggestions(suggest(summary, lang=lang, units=units), lang=lang))
     return "\n\n".join(sections) + "\n"
 
 

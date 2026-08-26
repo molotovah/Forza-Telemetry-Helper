@@ -139,6 +139,12 @@ _PAGE = """<!doctype html>
   <p class="hint" data-i18n="settings_hint">Stored in your user config file; the key is sent
   only to the configured API endpoint.</p>
   <form id="settings-form">
+    <label data-i18n="units_label">Units</label>
+    <select id="f-units">
+      <option value="metric" data-i18n="units_metric">Metric (km/h, bar, °C, kW, N·m)</option>
+      <option value="imperial" data-i18n="units_imperial">Imperial (mph, psi, °F,
+        hp, lb-ft)</option>
+    </select>
     <label data-i18n="provider_label">Provider</label>
     <select id="f-provider">
       <option value="openrouter">OpenRouter</option>
@@ -155,7 +161,7 @@ _PAGE = """<!doctype html>
       <option value="high" data-i18n="reasoning_high">high</option>
       <option value="max" data-i18n="reasoning_max">max</option>
     </select>
-    <label data-i18n="models_label">Free / reasoning models for this provider
+    <label><span data-i18n="models_label">Free / reasoning models for this provider</span>
       <button type="button" class="action" id="refresh-models-btn"
               data-i18n="refresh_models_btn">Refresh models</button>
     </label>
@@ -198,9 +204,12 @@ const I18N = {
     auto_capture_off: "off", auto_capture_progress: "lap {lap} in progress — {n} samples buffered",
     import_h2: "Import a CSV", file_label: "File", saved_captures_h2: "Saved captures",
     captures_col_name: "name", captures_col_saved: "saved", captures_col_samples: "samples",
-    captures_col_size: "size",
+    captures_col_size: "size", captures_delete_btn: "Delete",
+    captures_delete_confirm: 'Delete capture "{name}"? This cannot be undone.',
     settings_hint: "Stored in your user config file; the key is sent only to the configured " +
                    "API endpoint.",
+    units_label: "Units", units_metric: "Metric (km/h, bar, °C, kW, N·m)",
+    units_imperial: "Imperial (mph, psi, °F, hp, lb-ft)",
     provider_label: "Provider", key_label: "API key (leave empty to keep the saved one)",
     key_placeholder: "sk-or-v1-…", key_saved_placeholder: "saved — leave empty to keep",
     model_label: "Model ID", reasoning_label: "Reasoning effort (OpenRouter only)",
@@ -250,9 +259,12 @@ const I18N = {
     import_h2: "Importer un CSV", file_label: "Fichier",
     saved_captures_h2: "Captures enregistrées",
     captures_col_name: "nom", captures_col_saved: "enregistrée", captures_col_samples: "échant.",
-    captures_col_size: "taille",
+    captures_col_size: "taille", captures_delete_btn: "Supprimer",
+    captures_delete_confirm: "Supprimer la capture « {name} » ? Action irréversible.",
     settings_hint: "Enregistré dans votre fichier de configuration ; la clé n'est envoyée qu'au " +
                    "point de terminaison configuré.",
+    units_label: "Unités", units_metric: "Métrique (km/h, bar, °C, kW, N·m)",
+    units_imperial: "Impérial (mph, psi, °F, hp, lb-ft)",
     provider_label: "Fournisseur", key_label: "Clé API (laisser vide pour conserver l'actuelle)",
     key_placeholder: "sk-or-v1-…", key_saved_placeholder: "enregistrée — laisser vide pour garder",
     model_label: "ID du modèle", reasoning_label: "Effort de raisonnement (OpenRouter uniquement)",
@@ -312,14 +324,14 @@ document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
 
 const CHART_DEFS = [
   ["c-speed",
-   [{label: "km/h", key: "speed_kmh", color: "#4fc3f7"},
+   [{label: "km/h", key: "speed_kmh", color: "#4fc3f7", kind: "speed"},
     {label: "rpm", key: "rpm", color: "#ffb74d", axis: "y1"}],
    {y: {position: "left"}, y1: {position: "right"}}],
   ["c-tires",
-   [{label: "FL", key: "tire_fl", color: "#e57373"},
-    {label: "FR", key: "tire_fr", color: "#f06292"},
-    {label: "RL", key: "tire_rl", color: "#81c784"},
-    {label: "RR", key: "tire_rr", color: "#4db6ac"}],
+   [{label: "FL", key: "tire_fl", color: "#e57373", kind: "temp"},
+    {label: "FR", key: "tire_fr", color: "#f06292", kind: "temp"},
+    {label: "RL", key: "tire_rl", color: "#81c784", kind: "temp"},
+    {label: "RR", key: "tire_rr", color: "#4db6ac", kind: "temp"}],
    {}],
   ["c-slip",
    [{label: "front", key: "slip_front", color: "#ba68c8"},
@@ -327,6 +339,23 @@ const CHART_DEFS = [
    {}],
 ];
 const charts = {};
+let UNITS = "metric";
+
+// Mirrors fth.session's disp_*()/*_unit() -- display-only conversion, kept
+// in sync by hand since this is client JS, not shared code with the server.
+function dispSpeed(kmh) { return UNITS === "imperial" ? kmh * 0.621371 : kmh; }
+function dispTemp(c) { return UNITS === "imperial" ? c * 9 / 5 + 32 : c; }
+function dispPower(kw) { return UNITS === "imperial" ? kw * 1.341022 : kw; }
+function dispTorque(nm) { return UNITS === "imperial" ? nm * 0.737562 : nm; }
+function speedUnit() { return UNITS === "imperial" ? "mph" : "km/h"; }
+function tempUnit() { return UNITS === "imperial" ? "F" : "C"; }
+function powerUnit() { return UNITS === "imperial" ? "hp" : "kW"; }
+function torqueUnit() { return UNITS === "imperial" ? "lb-ft" : "Nm"; }
+function convertByKind(v, kind) {
+  if (kind === "speed") return dispSpeed(v);
+  if (kind === "temp") return dispTemp(v);
+  return v;
+}
 
 const lapLines = {
   id: "lapLines",
@@ -356,8 +385,8 @@ function makeChart(id, sets, scales) {
   return new Chart(document.getElementById(id), {
     type: "line",
     data: {labels: [],
-           datasets: sets.map(d => ({label: d.label, key: d.key, data: [], pointRadius: 0,
-                                     borderWidth: d.width || 1.5,
+           datasets: sets.map(d => ({label: d.label, key: d.key, kind: d.kind, data: [],
+                                     pointRadius: 0, borderWidth: d.width || 1.5,
                                      borderColor: d.color, yAxisID: d.axis || "y"}))},
     options: {animation: false, interaction: {mode: "index", intersect: false}, scales},
     plugins: [lapLines]});
@@ -370,17 +399,22 @@ async function api(path, opts) {
 
 function renderSummary(s) {
   const hint = t("balance_hint")[s.balance_hint] || s.balance_hint;
+  const su = speedUnit(), tu = tempUnit(), pu = powerUnit(), tqu = torqueUnit();
   const rows = [
     [t("sum_samples_duration"), `${s.samples} / ${s.duration_s.toFixed(1)}s`],
-    [t("sum_speed"), `${s.avg_speed_kmh.toFixed(1)} / ${s.max_speed_kmh.toFixed(1)} km/h`],
+    [t("sum_speed"),
+     `${dispSpeed(s.avg_speed_kmh).toFixed(1)} / ${dispSpeed(s.max_speed_kmh).toFixed(1)} ${su}`],
     [t("sum_redline_overlap"),
      `${s.redline_pct.toFixed(1)}% / ${s.pedal_overlap_pct.toFixed(1)}%`],
     [t("sum_grip_loss"),
      `${s.grip_loss_front_pct.toFixed(1)}% / ${s.grip_loss_rear_pct.toFixed(1)}%`
      + ` (${hint})`],
     [t("sum_tire_temp"),
-     `${s.tire_temp_front_avg_c.toFixed(1)} / ${s.tire_temp_rear_avg_c.toFixed(1)} C`],
-    [t("sum_power"), `${s.max_power_kw.toFixed(0)} kW / ${s.max_torque_nm.toFixed(0)} Nm`],
+     `${dispTemp(s.tire_temp_front_avg_c).toFixed(1)} / ` +
+     `${dispTemp(s.tire_temp_rear_avg_c).toFixed(1)} ${tu}`],
+    [t("sum_power"),
+     `${dispPower(s.max_power_kw).toFixed(0)} ${pu} / `
+     + `${dispTorque(s.max_torque_nm).toFixed(0)} ${tqu}`],
     [t("sum_wheelspin"),
      `${s.wheelspin_pct.toFixed(1)}% / ${s.lockup_front_pct.toFixed(1)}%`
      + ` - ${s.lockup_rear_pct.toFixed(1)}%`],
@@ -422,6 +456,7 @@ async function poll() {
   document.getElementById("status").textContent = "";
   document.getElementById("udp-error").textContent =
     data.udp_error ? t("udp_error_prefix") + data.udp_error : "";
+  UNITS = data.units || "metric";
   renderSummary(data.summary);
   renderCar(data.car);
   renderSuggestions(data.suggestions || []);
@@ -431,7 +466,9 @@ async function poll() {
     const ch = charts[id];
     ch.$laps = data.lap_bounds || [];
     ch.data.labels = ser.t;
-    ch.data.datasets.forEach(ds => { ds.data = ser[ds.key]; });
+    ch.data.datasets.forEach(ds => {
+      ds.data = (ser[ds.key] || []).map(v => convertByKind(v, ds.kind));
+    });
     ch.update("none");
   }
 }
@@ -463,11 +500,20 @@ async function refreshCapturesList() {
   const data = await api("/captures");
   const rows = data.captures.map(c =>
     `<tr><td>${c.name}</td><td>${new Date(c.saved_at * 1000).toLocaleString()}</td>` +
-    `<td>${c.samples}</td><td>${fmtBytes(c.size_bytes)}</td></tr>`
+    `<td>${c.samples}</td><td>${fmtBytes(c.size_bytes)}</td>` +
+    `<td><button type="button" class="action capture-delete-btn" ` +
+    `data-name="${c.name}">${t("captures_delete_btn")}</button></td></tr>`
   ).join("");
   document.getElementById("captures-list").innerHTML =
     `<tr><td>${t("captures_col_name")}</td><td>${t("captures_col_saved")}</td>` +
-    `<td>${t("captures_col_samples")}</td><td>${t("captures_col_size")}</td></tr>` + rows;
+    `<td>${t("captures_col_samples")}</td><td>${t("captures_col_size")}</td><td></td></tr>` + rows;
+  document.querySelectorAll(".capture-delete-btn").forEach(btn => btn.onclick = async () => {
+    if (!confirm(t("captures_delete_confirm").replace("{name}", btn.dataset.name))) return;
+    await api("/captures/delete", {method: "POST",
+                                   headers: {"Content-Type": "application/json"},
+                                   body: JSON.stringify({name: btn.dataset.name})});
+    refreshCapturesList();
+  });
 }
 
 async function refreshCaptureStatus() {
@@ -577,6 +623,7 @@ document.getElementById("f-provider").onchange = loadModels;
 
 async function loadSettingsForm() {
   const s = await api("/settings");
+  document.getElementById("f-units").value = s.units || "metric";
   document.getElementById("f-provider").value = s.provider || "openrouter";
   document.getElementById("f-model").value = s.model || "stealth/ox-alpha";
   document.getElementById("f-reasoning").value = s.reasoning || "";
@@ -587,6 +634,7 @@ async function loadSettingsForm() {
 document.getElementById("settings-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const body = {
+    units: document.getElementById("f-units").value,
     provider: document.getElementById("f-provider").value,
     model: document.getElementById("f-model").value.trim(),
     reasoning: document.getElementById("f-reasoning").value,
@@ -664,18 +712,24 @@ def _car_block(packets: list[TelemetryPacket]) -> dict:
 def _dashboard_data(packets: list[TelemetryPacket], udp_error: str | None = None) -> dict:
     packets = normalize_session(packets)
     summary = summarize(packets)
-    lang = config.load().get("lang", "en")
+    stored = config.load()
+    lang = stored.get("lang", "en")
+    units = config.resolve_units(stored)
     return {
+        # Always canonical metric/Celsius, stable field names regardless of
+        # `units` — the client converts for display (see dashboard.js's
+        # dispSpeed/dispTemp/etc.), same separation as raw-wire vs. lang.
         "summary": asdict(summary),
         "laps": [{"lap": n, **asdict(s)} for n, s in summarize_per_lap(packets)],
         "lap_bounds": _lap_bounds(packets),
         "car": _car_block(packets),
         "suggestions": [
             {"parameter": it.parameter, "change": it.change, "reason": it.reason}
-            for it in suggest(summary, lang=lang)
+            for it in suggest(summary, lang=lang, units=units)
         ],
         "series": _series(packets),
         "lang": lang,
+        "units": units,
         **({"udp_error": udp_error} if udp_error else {}),
     }
 
@@ -793,6 +847,7 @@ def make_server(
                             "reasoning": stored.get("reasoning", ""),
                             "provider": stored.get("provider", "openrouter"),
                             "lang": stored.get("lang", "en"),
+                            "units": config.resolve_units(stored),
                         }
                     ),
                     "application/json",
@@ -832,7 +887,7 @@ def make_server(
             if path == "/settings":
                 allowed = {
                     k: str(fields[k])
-                    for k in ("key", "model", "reasoning", "provider", "lang")
+                    for k in ("key", "model", "reasoning", "provider", "lang", "units")
                     if k in fields
                 }
                 config.save(**allowed)
@@ -850,6 +905,12 @@ def make_server(
                     self._send('{"ok": true}', "application/json")
                 except captures.InvalidName as exc:
                     self._send(json.dumps({"error": str(exc)}), "application/json", 400)
+            elif path == "/captures/delete":
+                try:
+                    captures.delete(fields.get("name", ""))
+                    self._send('{"ok": true}', "application/json")
+                except captures.InvalidName as exc:
+                    self._send(json.dumps({"error": str(exc)}), "application/json", 404)
             elif path in ("/capture/start", "/capture/stop", "/capture/save"):
                 if capture is None:
                     self._send('{"error": "live mode only"}', "application/json", 404)

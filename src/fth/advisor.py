@@ -64,7 +64,7 @@ _SYSTEM_EN = (
     "stiffness; ride height; damping (rebound, bump); aero (front/rear downforce); brake "
     "pressure and balance; differential acceleration/deceleration (AWD also has center).\n"
     "- Every change is RELATIVE: the current setup is unknown. Small, testable steps only.\n"
-    "- Tire pressure changes are in psi.\n"
+    "{units_note}\n"
     "- Order items by expected lap-time impact, biggest first. If the data contradicts a "
     "rule-engine suggestion, drop or correct it and say so in one line.\n"
     "- Match differential advice to the drivetrain type reported in the summary.\n"
@@ -92,8 +92,7 @@ _SYSTEM_FR = (
     "différentiel central).\n"
     "- Chaque changement est RELATIF : le réglage actuel est inconnu. Uniquement des pas "
     "petits et testables.\n"
-    "- Les changements de pression des pneus sont en bar, jamais en psi — c'est le système "
-    "métrique.\n"
+    "{units_note}\n"
     "- Classe les éléments par impact attendu sur le temps au tour, le plus grand d'abord. "
     "Si les données contredisent une suggestion du moteur de règles, corrige-la ou "
     "supprime-la et dis-le en une ligne.\n"
@@ -110,6 +109,29 @@ _SYSTEM_FR = (
     "- Écris toute la réponse en français : titres, puces et raisons. N'écris rien en "
     "anglais."
 )
+
+_UNITS_NOTE = {
+    "en": {
+        "metric": (
+            "- Use metric units: tire pressure in bar, speed in km/h, temperature in "
+            "degrees C, power in kW, torque in N·m."
+        ),
+        "imperial": (
+            "- Use imperial units: tire pressure in psi, speed in mph, temperature in "
+            "degrees F, power in hp, torque in lb-ft."
+        ),
+    },
+    "fr": {
+        "metric": (
+            "- Utilise les unités métriques : pression des pneus en bar, vitesse en "
+            "km/h, température en degrés C, puissance en kW, couple en N·m."
+        ),
+        "imperial": (
+            "- Utilise les unités impériales : pression des pneus en psi, vitesse en "
+            "mph, température en degrés F, puissance en hp, couple en lb-ft."
+        ),
+    },
+}
 
 
 def resolve_settings() -> dict[str, str]:
@@ -184,7 +206,11 @@ def list_models(settings: dict[str, str] | None = None) -> list[dict]:
 
 
 def _chat(settings: dict[str, str], prompt: str) -> str:
-    system_text = _SYSTEM_FR if settings.get("lang") == "fr" else _SYSTEM_EN
+    lang = "fr" if settings.get("lang") == "fr" else "en"
+    units = config.resolve_units(settings)
+    base = _SYSTEM_FR if lang == "fr" else _SYSTEM_EN
+    note = _UNITS_NOTE[lang].get(units, _UNITS_NOTE[lang]["metric"])
+    system_text = base.format(units_note=note)
     provider = settings.get("provider", _DEFAULT_PROVIDER)
     conf = _PROVIDERS.get(provider, _PROVIDERS[_DEFAULT_PROVIDER])
     payload: dict = {
@@ -224,18 +250,19 @@ def advise(s: SessionSummary, packets: list[TelemetryPacket] | None = None) -> s
     """
     settings = resolve_settings()
     lang = settings.get("lang", "en")
-    rules = suggest(s, lang=lang)
+    units = config.resolve_units(settings)
+    rules = suggest(s, lang=lang, units=units)
     fallback = format_suggestions(rules, lang=lang)
     if not settings.get("key"):
         return fallback
 
     prompt = (
         "Session telemetry summary:\n"
-        f"{format_report(s, lang=lang)}\n\n"
+        f"{format_report(s, lang=lang, units=units)}\n\n"
         f"Rule-engine suggestions:\n{fallback}\n\n"
     )
     if packets is not None:
-        per_lap = format_per_lap(summarize_per_lap(packets), lang=lang)
+        per_lap = format_per_lap(summarize_per_lap(packets), lang=lang, units=units)
         if per_lap:
             prompt += f"{per_lap}\n\n"
     prompt += "Turn this into a prioritized tuning plan following your instructions."

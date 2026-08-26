@@ -73,7 +73,7 @@ def test_ai_call_and_response(monkeypatch):
     system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
     assert "race engineer" in system["content"]
     assert "tuning menu" in system["content"]
-    assert "psi" in system["content"]  # English default -> imperial tire pressure unit
+    assert "bar" in system["content"]  # units default to metric regardless of lang
     user = next(m for m in captured["payload"]["messages"] if m["role"] == "user")
     assert "Session telemetry summary" in user["content"]
     assert "reasoning_effort" not in captured["payload"]  # opt-in only
@@ -297,3 +297,25 @@ def test_lang_fr_directs_model(monkeypatch, tmp_path):
     assert "français" in system["content"]
     assert "bar" in system["content"]
     assert "race engineer" not in system["content"]  # French system prompt, not an appendix
+
+
+def test_units_imperial_opt_in_independent_of_lang(monkeypatch, tmp_path):
+    """units is a separate setting from lang: French text + imperial units
+    (or English text + metric units, already covered above) must both work."""
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["payload"] = json.loads(req.data)
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    (tmp_path / "config.json").write_text(
+        json.dumps({"key": "file-key", "lang": "fr", "units": "imperial"})
+    )
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    system = next(m for m in captured["payload"]["messages"] if m["role"] == "system")
+    assert "français" in system["content"]
+    assert "en psi" in system["content"]
+    assert "en bar" not in system["content"]  # "barres anti-roulis" also contains "bar"

@@ -60,3 +60,24 @@ def test_import_csv_roundtrips_valid_content(tmp_path):
     loaded = captures.load("imported")
     assert len(loaded) == 4
     assert loaded[0].speed == 40.0
+
+
+def test_delete_removes_capture():
+    captures.save("lap1", _packets(3))
+    assert "lap1" in {c["name"] for c in captures.list_captures()}
+    captures.delete("lap1")
+    assert "lap1" not in {c["name"] for c in captures.list_captures()}
+
+
+def test_delete_missing_capture_raises():
+    with pytest.raises(captures.InvalidName):
+        captures.delete("does-not-exist")
+
+
+def test_list_captures_reflects_external_deletion(tmp_path):
+    captures.save("lap1", _packets(3))
+    captures.save("lap2", _packets(3))
+    # simulate the user deleting the file directly from the folder, not via the app
+    (tmp_path / "captures" / "lap1.csv").unlink()
+    names = {c["name"] for c in captures.list_captures()}
+    assert names == {"lap2"}
