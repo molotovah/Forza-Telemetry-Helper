@@ -175,7 +175,12 @@ def _chat(settings: dict[str, str], prompt: str) -> str:
         settings["url"], data=json.dumps(payload).encode(), headers=headers
     )
     with urllib.request.urlopen(req, timeout=int(settings["timeout"])) as resp:
-        return json.load(resp)["choices"][0]["message"]["content"]
+        data = json.load(resp)
+    if "choices" not in data:
+        err = data.get("error", data)
+        msg = err.get("message", err) if isinstance(err, dict) else err
+        raise RuntimeError(f"API error: {msg}")
+    return data["choices"][0]["message"]["content"]
 
 
 def advise(s: SessionSummary, packets: list[TelemetryPacket] | None = None) -> str:

@@ -178,6 +178,20 @@ def test_prompt_includes_per_lap_breakdown(monkeypatch):
     assert "Per-lap breakdown" not in captured["prompt"]
 
 
+def test_error_body_surfaced_instead_of_keyerror(monkeypatch, capsys):
+    def fake_urlopen(req, timeout):
+        return _FakeResponse(json.dumps({"error": {"message": "invalid model ID"}}).encode())
+
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    out = advise(summarize(_packets()))
+    assert "Suggested tuning changes" in out
+    err = capsys.readouterr().err
+    assert "invalid model ID" in err
+    assert "'choices'" not in err
+
+
 def test_groq_provider_defaults(monkeypatch):
     captured = {}
 
