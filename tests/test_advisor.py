@@ -92,6 +92,40 @@ def test_reasoning_effort_opt_in(monkeypatch):
     assert captured["payload"]["reasoning_effort"] == "low"
 
 
+def test_config_file_provides_credentials(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["auth"] = req.get_header("Authorization")
+        captured["payload"] = json.loads(req.data)
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    (tmp_path / "config.json").write_text(json.dumps({"key": "file-key", "model": "vendor/other"}))
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    out = advise(summarize(_packets()))
+    assert out == "ok"
+    assert captured["auth"] == "Bearer file-key"
+    assert captured["payload"]["model"] == "vendor/other"
+
+
+def test_env_overrides_config_file(monkeypatch, tmp_path):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["auth"] = req.get_header("Authorization")
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    (tmp_path / "config.json").write_text(json.dumps({"key": "file-key"}))
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    monkeypatch.setenv("FTH_AI_KEY", "env-key")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    assert captured["auth"] == "Bearer env-key"
+
+
 def test_http_error_falls_back_to_rules(monkeypatch, capsys):
     def fake_urlopen(req, timeout):
         raise urllib.error.URLError("connection refused")
