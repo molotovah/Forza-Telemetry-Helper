@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from fth import config
 from fth.advisor import advise
 from fth.dashboard import serve, serve_live
 from fth.ingest import TelemetryPacket, listen
@@ -14,6 +15,8 @@ from fth.session import (
     format_per_lap,
     format_report,
     load_csv,
+    normalize_session,
+    normalize_units,
     summarize,
     summarize_per_lap,
 )
@@ -32,15 +35,18 @@ def _live(args: argparse.Namespace) -> None:
         stream = open(args.csv, "w", newline="")  # noqa: SIM115 - closed in finally
         recorder = CsvRecorder(stream)
 
+    # only an explicit override applies here: a single packet can't be auto-detected
+    units = config.load().get("units", "metric")
+
     print(f"Listening on udp://{args.host}:{args.port} — start driving in FH6 (Ctrl+C to quit).")
     try:
         for pkt in listen(args.host, args.port):
             if not pkt.is_race_on:
                 continue
             if recorder:
-                recorder.write(pkt)
+                recorder.write(pkt)  # raw wire values on disk, normalized only for display
                 recorder.flush()
-            print(_live_line(pkt), end="", flush=True)
+            print(_live_line(normalize_units(pkt, units)), end="", flush=True)
     except KeyboardInterrupt:
         print()
     finally:
@@ -61,6 +67,7 @@ def _live_line(pkt: TelemetryPacket) -> str:
 
 def build_report(packets: list[TelemetryPacket], ai: bool = False) -> str:
     """The full `fth analyze` report text (summary, per-lap, suggestions)."""
+    packets = normalize_session(packets, config.load().get("units", "auto"))
     summary = summarize(packets)
     sections = [format_report(summary)]
     per_lap = format_per_lap(summarize_per_lap(packets))

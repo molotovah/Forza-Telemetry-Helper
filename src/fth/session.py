@@ -103,6 +103,19 @@ def detect_units(packets: Iterable[TelemetryPacket]) -> str:
     return "imperial" if hot > _DETECT_TEMP and fast > _DETECT_SPEED else "metric"
 
 
+def normalize_session(
+    packets: Iterable[TelemetryPacket], units: str = "auto"
+) -> list[TelemetryPacket]:
+    """Apply normalize_units to a whole session; "auto" runs detect_units first.
+
+    This is the actual entry point callers should use — detect_units/
+    normalize_units alone don't do anything unless something calls them.
+    """
+    ps = list(packets)
+    system = units if units in ("metric", "imperial") else detect_units(ps)
+    return [normalize_units(p, system) for p in ps]
+
+
 class CsvRecorder:
     """Writes packets to a CSV stream. Open the stream with newline="".
 

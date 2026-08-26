@@ -11,6 +11,7 @@ from fth.session import (
     format_per_lap,
     format_report,
     load_csv,
+    normalize_session,
     normalize_units,
     summarize,
     summarize_per_lap,
@@ -269,6 +270,24 @@ def test_detect_units_defaults_to_metric():
     ]
     assert detect_units(ps) == "metric"
     assert detect_units(ps[:5]) == "metric"  # not enough samples: metric
+
+
+def test_normalize_session_auto_converts_detected_imperial_stream():
+    normalized = normalize_session(_imperial_stream(), "auto")
+    assert all(p.speed < 100.0 for p in normalized)  # mph-scale -> plausible m/s
+
+
+def test_normalize_session_auto_leaves_metric_stream_untouched():
+    ps = [TelemetryPacket.from_bytes(make_packet(speed=40.0)) for _ in range(30)]
+    normalized = normalize_session(ps, "auto")
+    assert all(p.speed == 40.0 for p in normalized)
+
+
+def test_normalize_session_explicit_override_skips_detection():
+    # too few samples for detect_units, but an explicit "imperial" still applies
+    ps = [TelemetryPacket.from_bytes(make_packet(speed=100.0))]
+    normalized = normalize_session(ps, "imperial")
+    assert normalized[0].speed == pytest.approx(44.704, rel=1e-4)
 
 
 def test_config_stores_lang_and_units(monkeypatch, tmp_path):

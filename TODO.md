@@ -14,6 +14,15 @@ names its ceiling and what would change it.
 - **Aero rules ignore wind, gradient and banking** — high-speed grip loss is
   attributed to downforce alone; the Data Out stream offers no way to separate
   those effects.
+- **Unit auto-detection (`detect_units`/`normalize_units`) is a plausibility
+  heuristic, not a spec** — it existed unused for a while (nothing called it)
+  until dashboard.py/`__main__.py` were wired to run every session through
+  `normalize_session()` before summarizing/advising. Still unverified against
+  a real localized (e.g. French) FH6 install; if display units aren't
+  actually tied to game language the way reported, or the p95 thresholds
+  misfire on a real car/track combo, recalibrate `_DETECT_TEMP`/
+  `_DETECT_SPEED` (session.py) or add an explicit `units` override in
+  Settings instead of relying on auto-detect.
 
 ## Advisor (AI layer)
 
