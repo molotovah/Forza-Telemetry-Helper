@@ -1,5 +1,5 @@
-"""CLI entry points: `fth` (live readout), `fth analyze` (session report)
-and `fth dashboard` (local web dashboard)."""
+"""CLI entry points: bare `fth` launches the live web app; `fth live` is the
+terminal readout; `analyze` and `dashboard` work on recorded CSV logs."""
 
 from __future__ import annotations
 
@@ -124,9 +124,13 @@ def main() -> None:
         "--udp-port", type=int, default=20777, help="UDP port for --live (default: 20777)"
     )
 
-    # `fth` (bare) and `fth --csv …` default to live mode
+    # bare `fth` (and any unrecognized flags) launches the live web app;
+    # explicit subcommands keep their own arguments
     first = sys.argv[1] if len(sys.argv) > 1 else ""
-    argv = sys.argv[1:] if first in ("live", "analyze", "dashboard") else ["live", *sys.argv[1:]]
+    if first in ("live", "analyze", "dashboard"):
+        argv = sys.argv[1:]
+    else:
+        argv = ["dashboard", "--live", *sys.argv[1:]]
     args = parser.parse_args(argv)
     if args.cmd == "dashboard" and not args.live and not args.log:
         parser.error("dashboard needs a CSV log (or --live)")

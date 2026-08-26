@@ -68,7 +68,21 @@ def test_dashboard_without_log_or_live_fails(monkeypatch):
     assert exc.value.code == 2  # argparse usage error
 
 
-def test_bare_fth_defaults_to_live(monkeypatch):
+def test_bare_fth_launches_web_app(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(cli, "serve_live", lambda **kw: seen.update(kw))
+    run_cli(monkeypatch)  # no subcommand
+    assert seen == {"host": "127.0.0.1", "port": 8000, "udp_port": 20777}
+
+
+def test_bare_fth_flag_passthrough(monkeypatch):
+    seen = {}
+    monkeypatch.setattr(cli, "serve_live", lambda **kw: seen.update(kw))
+    run_cli(monkeypatch, "--port", "9000", "--udp-port", "30000")
+    assert seen == {"host": "127.0.0.1", "port": 9000, "udp_port": 30000}
+
+
+def test_fth_live_still_terminal_readout(monkeypatch):
     seen = {}
 
     def fake_listen(host, port):
@@ -76,7 +90,7 @@ def test_bare_fth_defaults_to_live(monkeypatch):
         return iter(())
 
     monkeypatch.setattr(cli, "listen", fake_listen)
-    run_cli(monkeypatch)  # no subcommand
+    run_cli(monkeypatch, "live")
     assert seen == {"host": "127.0.0.1", "port": 20777}
 
 
