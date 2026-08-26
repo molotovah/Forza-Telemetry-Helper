@@ -53,8 +53,23 @@ In FH6: **Settings > HUD and Gameplay**
 ## Usage
 
 ```sh
-fth                 # live readout while driving (default port 20777)
-fth --port 9999     # custom port
+fth                          # live readout while driving (default port 20777)
+fth live --csv session.csv   # same + record raw packets to CSV
+fth analyze session.csv      # session report from a recorded log
+```
+
+Example report (`fth analyze`):
+
+```
+=== Session summary ===
+samples 30  duration 2.9s  distance 1.45km
+laps 0  best lap 0.00s
+speed: avg 248.4 km/h, max 352.8 km/h
+time at redline: 0.0%  brake/throttle overlap: 0.0%
+grip loss: front 66.7% vs rear 0.0%  (understeer-biased)
+tire temps avg C: front 44.0 / rear 0.0, hottest 90.8
+max suspension travel m: front 0.000 / rear 0.000
+peak power 300 kW  peak torque 450 Nm
 ```
 
 ## Roadmap
@@ -63,8 +78,8 @@ fth --port 9999     # custom port
 | ----- | ------------------------------------------------------------------ | -------------- |
 | 0     | Project scaffolding, CI                                            | ✅ done        |
 | 1     | UDP ingestion + packet parser + synthetic fixtures                 | ✅ done        |
-| 2     | Session recording & feature extraction (per-lap aggregates, CSV)   | 🚧 in progress |
-| 3     | Rules-based tuning engine (full setup: tires, alignment, springs…) | ⏳ planned      |
+| 2     | Session recording & feature extraction (per-lap aggregates, CSV)   | ✅ done        |
+| 3     | Rules-based tuning engine (full setup: tires, alignment, springs…) | 🚧 in progress |
 | 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | ⏳ planned      |
 | 5     | CLI reports + community web dashboard                              | ⏳ planned      |
 | 6     | Community docs, examples, contribution workflow                    | ⏳ planned      |

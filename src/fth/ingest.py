@@ -74,6 +74,7 @@ _SPEC = [
 ]
 _FORMAT = "<" + "".join(code for _, code in _SPEC) + "x"
 _NAMES = tuple(name for name, _ in _SPEC)
+_INT_NAMES = frozenset(name for name, code in _SPEC if code in "iIHbB")
 
 assert struct.calcsize(_FORMAT) == PACKET_SIZE, "packet layout drift"
 
