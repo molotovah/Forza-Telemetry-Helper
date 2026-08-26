@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from fth.advisor import advise
 from fth.ingest import TelemetryPacket, listen
 from fth.session import CsvRecorder, format_report, load_csv, summarize
 from fth.tuning import format_suggestions, suggest
@@ -50,7 +51,10 @@ def _analyze(args: argparse.Namespace) -> None:
     summary = summarize(packets)
     print(format_report(summary))
     print()
-    print(format_suggestions(suggest(summary)))
+    if args.ai:
+        print(advise(summary))
+    else:
+        print(format_suggestions(suggest(summary)))
 
 
 def main() -> None:
@@ -67,6 +71,11 @@ def main() -> None:
 
     p_an = sub.add_parser("analyze", help="print a summary report from a recorded CSV log")
     p_an.add_argument("log", help="CSV file recorded with `fth live --csv`")
+    p_an.add_argument(
+        "--ai",
+        action="store_true",
+        help="AI advisor (env: FTH_AI_URL, FTH_AI_KEY, FTH_AI_MODEL); falls back to rules",
+    )
 
     # `fth` (bare) and `fth --csv …` default to live mode
     first = sys.argv[1] if len(sys.argv) > 1 else ""
@@ -76,6 +85,7 @@ def main() -> None:
         _live(args)
     else:
         _analyze(args)
+
 
 if __name__ == "__main__":
     main()

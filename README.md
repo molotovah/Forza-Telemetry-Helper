@@ -58,6 +58,19 @@ fth live --csv session.csv   # same + record raw packets to CSV
 fth analyze session.csv      # session report from a recorded log
 ```
 
+### AI advisor
+
+`fth analyze --ai` sends the session summary plus rule-engine suggestions to an
+OpenAI-compatible chat API for a prioritized tuning plan. Without it (or on any
+API error) the offline rules engine is used.
+
+```sh
+export FTH_AI_URL="https://…/v1/chat/completions"   # required for --ai
+export FTH_AI_KEY="your-token"                      # required for --ai
+export FTH_AI_MODEL="ox-alpha"                      # optional (default: ox-alpha)
+fth analyze session.csv --ai
+```
+
 Example report (`fth analyze`):
 
 ```
@@ -80,7 +93,7 @@ peak power 300 kW  peak torque 450 Nm
 | 1     | UDP ingestion + packet parser + synthetic fixtures                 | ✅ done        |
 | 2     | Session recording & feature extraction (per-lap aggregates, CSV)   | ✅ done        |
 | 3     | Rules-based tuning engine (tires, alignment, springs, gearing)     | ✅ done        |
-| 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | 🚧 in progress |
+| 4     | AI advisor via Ox Alpha HTTP API (offline fallback to rules)       | ✅ done        |
 | 5     | CLI reports + community web dashboard                              | ⏳ planned      |
 | 6     | Community docs, examples, contribution workflow                    | ⏳ planned      |
 
