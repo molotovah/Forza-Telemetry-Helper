@@ -18,9 +18,7 @@ def _summary(**overrides) -> object:
         "current_engine_rpm": 5000.0,
         "current_race_time": 5.0,
     }
-    return summarize(
-        [TelemetryPacket.from_bytes(make_packet(**{**defaults, **overrides}))]
-    )
+    return summarize([TelemetryPacket.from_bytes(make_packet(**{**defaults, **overrides}))])
 
 
 def _parameters(items: list[Suggestion]) -> dict[str, str]:
@@ -95,101 +93,108 @@ def test_format_lists_reasons():
 def _multi_session(packet_overrides: list[dict]) -> object:
     base = {"speed": 45.0, "current_race_time": 5.0}
     return summarize(
-        [
-            TelemetryPacket.from_bytes(make_packet(**{**base, **o}))
-            for o in packet_overrides
-        ]
+        [TelemetryPacket.from_bytes(make_packet(**{**base, **o})) for o in packet_overrides]
     )
 
 
 def test_front_lockup_reduces_pressure_and_moves_bias():
-    s = _multi_session([
-        {
-            "brake": 255,
-            "accel": 0,
-            "wheel_rotation_speed_front_left": 0.5,
-            "wheel_rotation_speed_front_right": 150.0,
-            "wheel_rotation_speed_rear_left": 200.0,
-            "wheel_rotation_speed_rear_right": 200.0,
-        },
-        {
-            "brake": 255,
-            "accel": 0,
-            "wheel_rotation_speed_front_left": 0.5,
-            "wheel_rotation_speed_front_right": 150.0,
-            "wheel_rotation_speed_rear_left": 200.0,
-            "wheel_rotation_speed_rear_right": 200.0,
-        },
-        {"brake": 0, "accel": 0},
-    ])
+    s = _multi_session(
+        [
+            {
+                "brake": 255,
+                "accel": 0,
+                "wheel_rotation_speed_front_left": 0.5,
+                "wheel_rotation_speed_front_right": 150.0,
+                "wheel_rotation_speed_rear_left": 200.0,
+                "wheel_rotation_speed_rear_right": 200.0,
+            },
+            {
+                "brake": 255,
+                "accel": 0,
+                "wheel_rotation_speed_front_left": 0.5,
+                "wheel_rotation_speed_front_right": 150.0,
+                "wheel_rotation_speed_rear_left": 200.0,
+                "wheel_rotation_speed_rear_right": 200.0,
+            },
+            {"brake": 0, "accel": 0},
+        ]
+    )
     changes = _parameters(suggest(s))
     assert changes["Brake pressure"] == "-reduce"
     assert changes["Brake balance"] == "-rearward"
 
 
 def test_rear_lockup_moves_balance_forward():
-    s = _multi_session([
-        {
-            "brake": 255,
-            "accel": 0,
-            "wheel_rotation_speed_front_left": 150.0,
-            "wheel_rotation_speed_front_right": 150.0,
-            "wheel_rotation_speed_rear_left": 0.5,
-            "wheel_rotation_speed_rear_right": 200.0,
-        },
-        {"brake": 0, "accel": 0},
-    ])
+    s = _multi_session(
+        [
+            {
+                "brake": 255,
+                "accel": 0,
+                "wheel_rotation_speed_front_left": 150.0,
+                "wheel_rotation_speed_front_right": 150.0,
+                "wheel_rotation_speed_rear_left": 0.5,
+                "wheel_rotation_speed_rear_right": 200.0,
+            },
+            {"brake": 0, "accel": 0},
+        ]
+    )
     changes = _parameters(suggest(s))
     assert changes["Brake balance"] == "+forward"
     assert "Brake pressure" not in changes
 
 
 def test_wheelspin_stiffens_diff_accel():
-    s = _multi_session([
-        {
-            "accel": 255,
-            "tire_slip_ratio_rear_left": 0.9,
-            "acceleration_z": 3.0,
-            "drivetrain_type": 1,
-        },
-        {
-            "accel": 255,
-            "tire_slip_ratio_rear_left": 0.9,
-            "acceleration_z": 3.0,
-            "drivetrain_type": 1,
-        },
-        {"accel": 0, "drivetrain_type": 1},
-    ])
+    s = _multi_session(
+        [
+            {
+                "accel": 255,
+                "tire_slip_ratio_rear_left": 0.9,
+                "acceleration_z": 3.0,
+                "drivetrain_type": 1,
+            },
+            {
+                "accel": 255,
+                "tire_slip_ratio_rear_left": 0.9,
+                "acceleration_z": 3.0,
+                "drivetrain_type": 1,
+            },
+            {"accel": 0, "drivetrain_type": 1},
+        ]
+    )
     changes = _parameters(suggest(s))
     assert changes["Differential (acceleration)"] == "+stiffen"
 
 
 def test_no_wheelspin_on_coasting_axle():
     # spin on the NON-driven axle (FWD car) must not trigger the diff rule
-    s = _multi_session([
-        {
-            "accel": 255,
-            "tire_slip_ratio_rear_left": 0.9,
-            "acceleration_z": 3.0,
-            "drivetrain_type": 0,
-        },
-        {
-            "accel": 255,
-            "tire_slip_ratio_rear_left": 0.9,
-            "acceleration_z": 3.0,
-            "drivetrain_type": 0,
-        },
-        {"accel": 0, "drivetrain_type": 0},
-    ])
+    s = _multi_session(
+        [
+            {
+                "accel": 255,
+                "tire_slip_ratio_rear_left": 0.9,
+                "acceleration_z": 3.0,
+                "drivetrain_type": 0,
+            },
+            {
+                "accel": 255,
+                "tire_slip_ratio_rear_left": 0.9,
+                "acceleration_z": 3.0,
+                "drivetrain_type": 0,
+            },
+            {"accel": 0, "drivetrain_type": 0},
+        ]
+    )
     assert "Differential (acceleration)" not in _parameters(suggest(s))
 
 
 def test_coast_oversteer_softens_diff_decel():
-    s = _multi_session([
-        {"accel": 0, "tire_combined_slip_rear_left": 1.5},
-        {"accel": 0, "tire_combined_slip_rear_left": 1.5},
-        {"accel": 0},
-    ])
+    s = _multi_session(
+        [
+            {"accel": 0, "tire_combined_slip_rear_left": 1.5},
+            {"accel": 0, "tire_combined_slip_rear_left": 1.5},
+            {"accel": 0},
+        ]
+    )
     changes = _parameters(suggest(s))
     assert changes["Differential (deceleration)"] == "soften"
 

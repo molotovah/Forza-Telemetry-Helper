@@ -63,16 +63,22 @@ def suggest(s: SessionSummary) -> list[Suggestion]:
     # --- Alignment & anti-roll bars: fix handling balance ---
     if s.grip_loss_front_pct - s.grip_loss_rear_pct > _BALANCE_TOLERANCE_PTS:
         out.append(
-            Suggestion("Anti-roll bar (front)", "-2",
-                       f"excess front grip loss ({s.grip_loss_front_pct:.0f}%"
-                       f" vs {s.grip_loss_rear_pct:.0f}% rear)")
+            Suggestion(
+                "Anti-roll bar (front)",
+                "-2",
+                f"excess front grip loss ({s.grip_loss_front_pct:.0f}%"
+                f" vs {s.grip_loss_rear_pct:.0f}% rear)",
+            )
         )
         out.append(Suggestion("Camber (front)", "+0.3 deg", "front axle slides before the rear"))
     elif s.grip_loss_rear_pct - s.grip_loss_front_pct > _BALANCE_TOLERANCE_PTS:
         out.append(
-            Suggestion("Anti-roll bar (rear)", "-2",
-                       f"excess rear grip loss ({s.grip_loss_rear_pct:.0f}%"
-                       f" vs {s.grip_loss_front_pct:.0f}% front)")
+            Suggestion(
+                "Anti-roll bar (rear)",
+                "-2",
+                f"excess rear grip loss ({s.grip_loss_rear_pct:.0f}%"
+                f" vs {s.grip_loss_front_pct:.0f}% front)",
+            )
         )
         out.append(Suggestion("Camber (rear)", "+0.3 deg", "rear axle slides before the front"))
 
@@ -83,26 +89,38 @@ def suggest(s: SessionSummary) -> list[Suggestion]:
     ):
         if peak >= _BOTTOM_OUT_NORM:
             out.append(
-                Suggestion(f"Spring stiffness ({axle})", "+stiffen",
-                           f"{axle} suspension bottoms out (travel peaked at {peak * 100:.0f}%)")
+                Suggestion(
+                    f"Spring stiffness ({axle})",
+                    "+stiffen",
+                    f"{axle} suspension bottoms out (travel peaked at {peak * 100:.0f}%)",
+                )
             )
         elif 0 < peak <= _SOFT_SUSPENSION_NORM and s.avg_speed_kmh >= _MIN_SPEED_FOR_SUSP_RULE_KMH:
             out.append(
-                Suggestion(f"Spring stiffness ({axle})", "-soften",
-                           f"{axle} suspension barely used (travel peaked at {peak * 100:.0f}%)")
+                Suggestion(
+                    f"Spring stiffness ({axle})",
+                    "-soften",
+                    f"{axle} suspension barely used (travel peaked at {peak * 100:.0f}%)",
+                )
             )
 
     # --- Gearing: final drive vs time spent on the limiter ---
     if s.redline_pct >= _REDLINE_HIGH_PCT:
         out.append(
-            Suggestion("Final drive", "-lower number (longer)",
-                       f"on the limiter {s.redline_pct:.0f}% of the session")
+            Suggestion(
+                "Final drive",
+                "-lower number (longer)",
+                f"on the limiter {s.redline_pct:.0f}% of the session",
+            )
         )
     elif s.redline_pct <= _REDLINE_LOW_PCT and s.avg_speed_kmh >= 50:
         out.append(
-            Suggestion("Final drive", "+higher number (shorter)",
-                       f"engine rarely stretched ({s.redline_pct:.0f}% at redline,"
-                       f" avg {s.avg_speed_kmh:.0f} km/h)")
+            Suggestion(
+                "Final drive",
+                "+higher number (shorter)",
+                f"engine rarely stretched ({s.redline_pct:.0f}% at redline,"
+                f" avg {s.avg_speed_kmh:.0f} km/h)",
+            )
         )
 
     # --- Brakes: bias/pressure from wheel lockup ---

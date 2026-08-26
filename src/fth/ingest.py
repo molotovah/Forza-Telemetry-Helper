@@ -29,10 +29,7 @@ _SPEC = [
     *[("velocity_" + a, "f") for a in ("x", "y", "z")],
     *[("angular_velocity_" + a, "f") for a in ("x", "y", "z")],
     *[(n, "f") for n in ("yaw", "pitch", "roll")],
-    *[
-        ("normalized_suspension_travel_" + c, "f")
-        for c in _CORNER
-    ],
+    *[("normalized_suspension_travel_" + c, "f") for c in _CORNER],
     *[("tire_slip_ratio_" + c, "f") for c in _CORNER],
     *[("wheel_rotation_speed_" + c, "f") for c in _CORNER],
     *[("wheel_on_rumble_strip_" + c, "i") for c in _CORNER],
