@@ -112,6 +112,26 @@ def test_report_render():
     assert f"{s.max_torque_nm:.0f} Nm" in text
 
 
+def test_report_render_french():
+    s = summarize(_packets(3))
+    text = format_report(s, lang="fr")
+    assert "Résumé de la session" in text
+    assert "Session summary" not in text
+    assert f"{s.max_torque_nm:.0f} Nm" in text  # numbers/units stay as-is
+
+
+def test_report_translates_balance_hint():
+    s = summarize([TelemetryPacket.from_bytes(make_packet(tire_combined_slip_front_left=1.5))])
+    assert s.balance_hint == "understeer-biased"  # stable code, unaffected by lang
+    assert "sous-vireur" in format_report(s, lang="fr")
+    assert "understeer-biased" in format_report(s, lang="en")
+
+
+def test_report_unknown_lang_falls_back_to_english():
+    s = summarize(_packets(3))
+    assert "Session summary" in format_report(s, lang="de")
+
+
 def test_summarize_per_lap():
     ps = [
         TelemetryPacket.from_bytes(
@@ -131,6 +151,13 @@ def test_format_per_lap_needs_two_laps():
     text = format_per_lap(summarize_per_lap(ps))
     assert "Per-lap breakdown" in text
     assert "lap 0:" in text and "lap 1:" in text
+
+
+def test_format_per_lap_french():
+    ps = [TelemetryPacket.from_bytes(make_packet(lap_number=n)) for n in (0, 0, 1, 1)]
+    text = format_per_lap(summarize_per_lap(ps), lang="fr")
+    assert "Détail par tour" in text
+    assert "tour 0 :" in text and "tour 1 :" in text
 
 
 def test_extended_metrics():

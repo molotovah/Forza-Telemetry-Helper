@@ -209,3 +209,81 @@ def test_high_speed_imbalance_adds_aero():
 def test_no_aero_advice_below_band():
     slow = [{"speed": 20.0, "tire_combined_slip_front_left": 1.5}] * 6
     assert "Aero (front)" not in _parameters(suggest(_multi_session(slow)))
+
+
+def test_bottoming_out_also_suggests_bump_damping():
+    s = _summary(normalized_suspension_travel_rear_left=1.0)
+    changes = _parameters(suggest(s))
+    assert changes["Damping, bump (rear)"] == "+stiffen"
+
+
+def test_unused_suspension_also_suggests_rebound_damping():
+    s = _summary(speed=50.0, normalized_suspension_travel_front_left=0.1)
+    changes = _parameters(suggest(s))
+    assert changes["Damping, rebound (front)"] == "-soften"
+
+
+def test_both_axles_bottoming_out_suggests_ride_height():
+    s = _summary(
+        normalized_suspension_travel_front_left=1.0, normalized_suspension_travel_rear_left=1.0
+    )
+    changes = _parameters(suggest(s))
+    assert changes["Ride height"] == "+raise"
+
+
+def test_one_axle_bottoming_out_does_not_suggest_ride_height():
+    s = _summary(normalized_suspension_travel_rear_left=1.0)  # front left at default 0.7
+    assert "Ride height" not in _parameters(suggest(s))
+
+
+def test_awd_understeer_shifts_center_diff_rearward():
+    s = _multi_session(
+        [{"drivetrain_type": 2, "tire_combined_slip_front_left": 1.6}] * 3
+        + [{"drivetrain_type": 2}] * 3
+    )
+    changes = _parameters(suggest(s))
+    assert changes["Differential (center)"] == "-rearward bias"
+
+
+def test_awd_oversteer_shifts_center_diff_forward():
+    s = _multi_session(
+        [{"drivetrain_type": 2, "tire_combined_slip_rear_left": 1.6}] * 3
+        + [{"drivetrain_type": 2}] * 3
+    )
+    changes = _parameters(suggest(s))
+    assert changes["Differential (center)"] == "+forward bias"
+
+
+def test_non_awd_never_gets_center_diff_advice():
+    s = _multi_session(
+        [{"drivetrain_type": 1, "tire_combined_slip_front_left": 1.6}] * 3
+        + [{"drivetrain_type": 1}] * 3
+    )
+    assert "Differential (center)" not in _parameters(suggest(s))
+
+
+def test_french_translations():
+    s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
+    changes = _parameters(suggest(s, lang="fr"))
+    assert changes["Pression des pneus (arrière)"] == "-2 psi"
+    assert "Tire pressure" not in " ".join(changes)
+
+
+def test_french_reasons_and_header():
+    s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
+    items = suggest(s, lang="fr")
+    text = format_suggestions(items, lang="fr")
+    assert "Réglages suggérés" in text
+    assert "raison :" in text
+    assert "reason:" not in text
+
+
+def test_french_empty_session_message():
+    text = format_suggestions([], lang="fr")
+    assert "aucun" in text
+
+
+def test_unknown_lang_falls_back_to_english():
+    s = _summary(tire_temp_rear_left=110.0, tire_temp_rear_right=105.0)
+    changes = _parameters(suggest(s, lang="de"))
+    assert "Tire pressure (rear)" in changes

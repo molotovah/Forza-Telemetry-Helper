@@ -14,6 +14,22 @@ names its ceiling and what would change it.
 - **Aero rules ignore wind, gradient and banking** — high-speed grip loss is
   attributed to downforce alone; the Data Out stream offers no way to separate
   those effects.
+- **Damping (bump/rebound) suggestions are co-inferred from the same signal
+  as springs** — max normalized suspension travel, not oscillation frequency
+  or velocity. Bottoming out could mean the spring rate is wrong, the damping
+  is wrong, or both; the rule fires for both parameters off one shared
+  observation. Treat as a starting point paired with the spring suggestion,
+  not an independently validated damping read. A real fix needs per-sample
+  travel *velocity*, not just the session max.
+- **Toe, caster and per-gear ratio tuning are not covered** — deliberately.
+  The Data Out stream has no field that plausibly proxies toe or caster
+  (they affect turn-in feel/tire wear, not anything in the slip/temp/travel
+  aggregates here), and per-gear ratio advice would need per-gear
+  time-at-redline from raw packets (`gear` field exists per-packet, but
+  `SessionSummary` only aggregates `redline_pct` across the whole session,
+  not broken out by gear) — a real feature, not a one-line addition. Add
+  a `gear`-keyed breakdown to `summarize()` before attempting it; don't
+  guess a rule without a data source the way the units heuristic did.
 - **(Resolved, keeping the postmortem.)** An earlier "auto-detect metric vs
   imperial" heuristic (`detect_units`, a `units` config field) assumed the
   wire format had two variants depending on display/language settings — it
@@ -84,6 +100,29 @@ names its ceiling and what would change it.
   request; vendoring ~200KB into the repo was declined.
 - **UDP port for tests grabbed via bind-then-close probe** — racy under
   parallel test runs; switch to port 0 + socket introspection if it flakes.
+
+## Localization (i18n)
+
+- **Only English/French, only two languages.** Adding a third means a third
+  branch in every `_T`/`_R`/`I18N` table (tuning.py, session.py, dashboard.py)
+  plus the `advisor._SYSTEM` French-only instruction — no abstraction over
+  "supported languages" exists yet, by design (two tables per module is
+  simple; a registry for two entries would be over-engineering).
+- **No locale number/date formatting** — percentages and decimals use plain
+  `.toFixed()`/Python `:.1f` regardless of language (period decimals even in
+  French text). Deliberate: correct-enough for a technical audience, avoids
+  pulling in `Intl`/locale-data complexity for a cosmetic difference.
+- **The AI advisor's free-text reply depends on model compliance, not
+  enforcement** — `lang=="fr"` just appends "Reply in French" to the system
+  prompt (advisor.py `_chat`); nothing validates the model actually did. The
+  rules-engine fallback (used when no key is configured, i.e. most users)
+  has no such gap — its text is template-generated, not model-generated.
+- **Client i18n has no automated parity check** — `I18N.en`/`I18N.fr` in
+  `dashboard.py`'s `_PAGE` must have matching keys by hand; nothing in CI
+  verifies it (checked manually at write time via a one-off script, not a
+  repo test). A missing key falls back to showing the raw key name via `t()`
+  — visible immediately in the UI, not a silent crash, but still worth a
+  real test if this file grows further.
 
 ## Tooling / repo
 

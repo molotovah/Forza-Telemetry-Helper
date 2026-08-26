@@ -63,8 +63,9 @@ _PAGE = """<!doctype html>
   td:first-child { color: var(--muted); }
   #status { color: var(--warn); }
   #udp-error { color: var(--danger); }
-  #theme-toggle { background: var(--surface); color: var(--fg); border: 1px solid var(--border);
-                  border-radius: 6px; padding: .2rem .55rem; cursor: pointer; font-size: .9rem; }
+  #theme-toggle, #lang-toggle { background: var(--surface); color: var(--fg);
+                  border: 1px solid var(--border); border-radius: 6px; padding: .2rem .55rem;
+                  cursor: pointer; font-size: .9rem; }
   .card { background: var(--surface); border-radius: 8px; padding: .75rem 1rem;
           display: inline-block; vertical-align: top; margin-right: 1rem; }
   canvas { max-width: 900px; }
@@ -81,93 +82,227 @@ _PAGE = """<!doctype html>
 <body>
 <h1>Forza Telemetry Helper <span id="status"></span><span id="udp-error"></span>
   <button id="theme-toggle" aria-label="Toggle theme">🌙</button>
+  <button id="lang-toggle" aria-label="Toggle language">FR</button>
 </h1>
 <nav>
-  <button data-tab="drive" class="active">Drive</button>
-  <button data-tab="tune">Tune</button>
-  <button data-tab="captures">Captures</button>
-  <button data-tab="settings">Settings</button>
+  <button data-tab="drive" class="active" data-i18n="nav_drive">Drive</button>
+  <button data-tab="tune" data-i18n="nav_tune">Tune</button>
+  <button data-tab="captures" data-i18n="nav_captures">Captures</button>
+  <button data-tab="settings" data-i18n="nav_settings">Settings</button>
 </nav>
 
 <section id="tab-drive" class="active">
-  <div id="summary"><span class="hint">waiting for telemetry…</span></div>
-  <h2>Car</h2><div id="car"></div>
-  <h2>Speed / RPM</h2><canvas id="c-speed"></canvas>
-  <h2>Tire temps (C)</h2><canvas id="c-tires"></canvas>
-  <h2>Grip loss (|combined slip| per axle)</h2><canvas id="c-slip"></canvas>
+  <div id="summary"><span class="hint" data-i18n="drive_waiting">waiting for telemetry…</span></div>
+  <h2 data-i18n="drive_car_h2">Car</h2><div id="car"></div>
+  <h2 data-i18n="drive_speed_h2">Speed / RPM</h2><canvas id="c-speed"></canvas>
+  <h2 data-i18n="drive_tires_h2">Tire temps (C)</h2><canvas id="c-tires"></canvas>
+  <h2 data-i18n="drive_slip_h2">Grip loss (|combined slip| per axle)</h2>
+  <canvas id="c-slip"></canvas>
 </section>
 
 <section id="tab-tune">
-  <h2>Rule-engine suggestions</h2><div id="suggestions"></div>
-  <h2>AI tuning plan</h2>
-  <p class="hint">Sends the full session (summary, per-lap table, rule suggestions)
-  to the configured model. Needs an API key in Settings.</p>
-  <button class="action" id="analyze-btn">Generate AI tuning plan</button>
+  <h2 data-i18n="tune_suggestions_h2">Rule-engine suggestions</h2><div id="suggestions"></div>
+  <h2 data-i18n="tune_ai_h2">AI tuning plan</h2>
+  <p class="hint" data-i18n="tune_ai_hint">Sends the full session (summary, per-lap table, rule
+  suggestions) to the configured model. Needs an API key in Settings.</p>
+  <button class="action" id="analyze-btn" data-i18n="tune_ai_btn">Generate AI tuning plan</button>
   <pre id="ai-out" hidden></pre>
 </section>
 
 <section id="tab-captures">
   <div id="capture-controls">
-    <p class="hint" id="capture-status-text">checking recording status…</p>
-    <button class="action" id="capture-start">Start capture</button>
-    <button class="action" id="capture-stop">Stop capture</button>
-    <label>Name</label>
+    <p class="hint" id="capture-status-text" data-i18n="capture_status_checking">checking
+    recording status…</p>
+    <button class="action" id="capture-start" data-i18n="capture_start_btn">Start capture</button>
+    <button class="action" id="capture-stop" data-i18n="capture_stop_btn">Stop capture</button>
+    <label data-i18n="capture_name_label">Name</label>
     <input type="text" id="capture-name" placeholder="e.g. spa-gt3-race1">
-    <button class="action" id="capture-save-btn">Save capture</button>
+    <button class="action" id="capture-save-btn" data-i18n="capture_save_btn">Save capture</button>
   </div>
-  <h2>Auto-capture per lap</h2>
+  <h2 data-i18n="auto_capture_h2">Auto-capture per lap</h2>
   <div id="auto-capture-controls">
-    <label><input type="checkbox" id="auto-capture-toggle"> auto-save each completed lap
-      as its own capture (named <code>auto-lap&lt;n&gt;-&lt;timestamp&gt;</code>)</label>
+    <label><input type="checkbox" id="auto-capture-toggle">
+      <span data-i18n-html="auto_capture_label">auto-save each completed lap as its own capture
+      (named <code>auto-lap&lt;n&gt;-&lt;timestamp&gt;</code>)</span></label>
     <p class="hint" id="auto-capture-status-text"></p>
   </div>
-  <h2>Import a CSV</h2>
-  <label>Name</label>
+  <h2 data-i18n="import_h2">Import a CSV</h2>
+  <label data-i18n="capture_name_label">Name</label>
   <input type="text" id="capture-import-name" placeholder="e.g. spa-gt3-race1">
-  <label>File</label>
+  <label data-i18n="file_label">File</label>
   <input type="file" id="capture-import-file" accept=".csv">
-  <h2>Saved captures</h2>
+  <h2 data-i18n="saved_captures_h2">Saved captures</h2>
   <table id="captures-list"></table>
 </section>
 
 <section id="tab-settings">
-  <p class="hint">Stored in your user config file; the key is sent only to the
-  configured API endpoint.</p>
+  <p class="hint" data-i18n="settings_hint">Stored in your user config file; the key is sent
+  only to the configured API endpoint.</p>
   <form id="settings-form">
-    <label>Provider</label>
+    <label data-i18n="provider_label">Provider</label>
     <select id="f-provider">
       <option value="openrouter">OpenRouter</option>
       <option value="groq">Groq</option>
     </select>
-    <label>API key (leave empty to keep the saved one)</label>
+    <label data-i18n="key_label">API key (leave empty to keep the saved one)</label>
     <input type="password" id="f-key" placeholder="sk-or-v1-…">
-    <label>Model ID</label>
+    <label data-i18n="model_label">Model ID</label>
     <input type="text" id="f-model">
-    <label>Reasoning effort (OpenRouter only)</label>
+    <label data-i18n="reasoning_label">Reasoning effort (OpenRouter only)</label>
     <select id="f-reasoning">
-      <option value="">default (max)</option>
-      <option value="low">low</option>
-      <option value="high">high</option>
-      <option value="max">max</option>
+      <option value="" data-i18n="reasoning_default">default (max)</option>
+      <option value="low" data-i18n="reasoning_low">low</option>
+      <option value="high" data-i18n="reasoning_high">high</option>
+      <option value="max" data-i18n="reasoning_max">max</option>
     </select>
-    <label>Free / reasoning models for this provider
-      <button type="button" class="action" id="refresh-models-btn">Refresh models</button>
+    <label data-i18n="models_label">Free / reasoning models for this provider
+      <button type="button" class="action" id="refresh-models-btn"
+              data-i18n="refresh_models_btn">Refresh models</button>
     </label>
-    <div id="model-checks" class="hint">not loaded — click Refresh models</div>
-    <button class="action" type="submit">Save settings</button>
+    <div id="model-checks" class="hint" data-i18n="models_not_loaded">not loaded — click
+    Refresh models</div>
+    <button class="action" type="submit" data-i18n="save_settings_btn">Save settings</button>
     <span id="save-status" class="hint"></span>
   </form>
 </section>
 
 <script>
-function applyTheme(t) {
-  document.documentElement.dataset.theme = t;
-  localStorage.setItem("fth-theme", t);
-  document.getElementById("theme-toggle").textContent = t === "light" ? "☀️" : "🌙";
+const I18N = {
+  en: {
+    nav_drive: "Drive", nav_tune: "Tune", nav_captures: "Captures", nav_settings: "Settings",
+    drive_waiting: "waiting for telemetry…",
+    drive_car_h2: "Car", drive_speed_h2: "Speed / RPM", drive_tires_h2: "Tire temps (C)",
+    drive_slip_h2: "Grip loss (|combined slip| per axle)",
+    status_waiting: "— waiting for telemetry…", udp_error_prefix: "UDP error: ",
+    sum_samples_duration: "samples / duration", sum_speed: "speed avg / max",
+    sum_redline_overlap: "redline / pedal overlap", sum_grip_loss: "grip loss front / rear",
+    sum_tire_temp: "tire temps avg f / r", sum_power: "peak power / torque",
+    sum_wheelspin: "wheelspin / lockup f-r", sum_coast: "coast oversteer",
+    balance_hint: {"understeer-biased": "understeer-biased", "oversteer-biased": "oversteer-biased",
+                   "neutral": "neutral"},
+    car_keys: {car_id: "car id", class_code: "class code", performance_index: "performance index",
+               drivetrain: "drivetrain", cylinders: "cylinders", car_group: "car group"},
+    tune_suggestions_h2: "Rule-engine suggestions", tune_ai_h2: "AI tuning plan",
+    tune_ai_hint: "Sends the full session (summary, per-lap table, rule suggestions) to the " +
+                  "configured model. Needs an API key in Settings.",
+    tune_ai_btn: "Generate AI tuning plan", tune_ai_thinking: "Thinking… (can take up to a minute)",
+    tune_ai_failed: "Request failed.", tune_none: "none yet — setup looks balanced so far.",
+    capture_status_checking: "checking recording status…",
+    capture_start_btn: "Start capture", capture_stop_btn: "Stop capture",
+    capture_name_label: "Name", capture_save_btn: "Save capture",
+    capture_recording: "recording — ", capture_stopped: "stopped — ",
+    capture_samples: "{n} samples",
+    auto_capture_h2: "Auto-capture per lap",
+    auto_capture_label: 'auto-save each completed lap as its own capture ' +
+                         '(named <code>auto-lap&lt;n&gt;-&lt;timestamp&gt;</code>)',
+    auto_capture_off: "off", auto_capture_progress: "lap {lap} in progress — {n} samples buffered",
+    import_h2: "Import a CSV", file_label: "File", saved_captures_h2: "Saved captures",
+    captures_col_name: "name", captures_col_saved: "saved", captures_col_samples: "samples",
+    captures_col_size: "size",
+    settings_hint: "Stored in your user config file; the key is sent only to the configured " +
+                   "API endpoint.",
+    provider_label: "Provider", key_label: "API key (leave empty to keep the saved one)",
+    key_placeholder: "sk-or-v1-…", key_saved_placeholder: "saved — leave empty to keep",
+    model_label: "Model ID", reasoning_label: "Reasoning effort (OpenRouter only)",
+    reasoning_default: "default (max)", reasoning_low: "low", reasoning_high: "high",
+    reasoning_max: "max",
+    models_label: "Free / reasoning models for this provider",
+    refresh_models_btn: "Refresh models", models_not_loaded: "not loaded — click Refresh models",
+    models_no_models: "no models loaded — click Refresh models", models_loading: "loading…",
+    models_reasoning_badge: " [reasoning]",
+    save_settings_btn: "Save settings", save_status_saved: "saved ✓",
+  },
+  fr: {
+    nav_drive: "Conduite", nav_tune: "Réglages", nav_captures: "Captures",
+    nav_settings: "Paramètres",
+    drive_waiting: "en attente de télémétrie…",
+    drive_car_h2: "Voiture", drive_speed_h2: "Vitesse / RPM",
+    drive_tires_h2: "Température pneus (C)",
+    drive_slip_h2: "Perte d'adhérence (glissement combiné par essieu)",
+    status_waiting: "— en attente de télémétrie…", udp_error_prefix: "Erreur UDP : ",
+    sum_samples_duration: "échantillons / durée", sum_speed: "vitesse moy. / max",
+    sum_redline_overlap: "limiteur / chevauchement pédales",
+    sum_grip_loss: "perte d'adhérence avant / arrière",
+    sum_tire_temp: "temp. pneus moy. av / ar", sum_power: "puissance max / couple max",
+    sum_wheelspin: "patinage / blocage av-ar", sum_coast: "survirage en roue libre",
+    balance_hint: {"understeer-biased": "sous-vireur", "oversteer-biased": "survireur",
+                   "neutral": "neutre"},
+    car_keys: {car_id: "id voiture", class_code: "code classe",
+               performance_index: "indice de performance", drivetrain: "transmission",
+               cylinders: "cylindres", car_group: "groupe"},
+    tune_suggestions_h2: "Suggestions du moteur de règles", tune_ai_h2: "Plan de réglage IA",
+    tune_ai_hint: "Envoie toute la session (résumé, tableau par tour, suggestions) au modèle " +
+                  "configuré. Nécessite une clé API dans Paramètres.",
+    tune_ai_btn: "Générer un plan de réglage IA",
+    tune_ai_thinking: "Réflexion en cours… (jusqu'à une minute)",
+    tune_ai_failed: "La requête a échoué.",
+    tune_none: "aucune pour l'instant — le setup semble équilibré.",
+    capture_status_checking: "vérification de l'état d'enregistrement…",
+    capture_start_btn: "Démarrer la capture", capture_stop_btn: "Arrêter la capture",
+    capture_name_label: "Nom", capture_save_btn: "Enregistrer la capture",
+    capture_recording: "enregistrement — ", capture_stopped: "arrêté — ",
+    capture_samples: "{n} échantillons",
+    auto_capture_h2: "Capture automatique par tour",
+    auto_capture_label: 'enregistre automatiquement chaque tour terminé comme capture ' +
+                         '(nommée <code>auto-lap&lt;n&gt;-&lt;horodatage&gt;</code>)',
+    auto_capture_off: "désactivé",
+    auto_capture_progress: "tour {lap} en cours — {n} échantillons en mémoire",
+    import_h2: "Importer un CSV", file_label: "Fichier",
+    saved_captures_h2: "Captures enregistrées",
+    captures_col_name: "nom", captures_col_saved: "enregistrée", captures_col_samples: "échant.",
+    captures_col_size: "taille",
+    settings_hint: "Enregistré dans votre fichier de configuration ; la clé n'est envoyée qu'au " +
+                   "point de terminaison configuré.",
+    provider_label: "Fournisseur", key_label: "Clé API (laisser vide pour conserver l'actuelle)",
+    key_placeholder: "sk-or-v1-…", key_saved_placeholder: "enregistrée — laisser vide pour garder",
+    model_label: "ID du modèle", reasoning_label: "Effort de raisonnement (OpenRouter uniquement)",
+    reasoning_default: "défaut (max)", reasoning_low: "faible", reasoning_high: "élevé",
+    reasoning_max: "max",
+    models_label: "Modèles gratuits / à raisonnement pour ce fournisseur",
+    refresh_models_btn: "Actualiser les modèles",
+    models_not_loaded: "non chargé — cliquez sur Actualiser les modèles",
+    models_no_models: "aucun modèle chargé — cliquez sur Actualiser les modèles",
+    models_loading: "chargement…", models_reasoning_badge: " [raisonnement]",
+    save_settings_btn: "Enregistrer les paramètres", save_status_saved: "enregistré ✓",
+  },
+};
+let LANG = "en";
+function t(key) {
+  const v = I18N[LANG][key];
+  return v === undefined ? key : v;
+}
+function applyLang(lang) {
+  LANG = I18N[lang] ? lang : "en";
+  document.documentElement.lang = LANG;
+  localStorage.setItem("fth-lang", LANG);
+  document.getElementById("lang-toggle").textContent = LANG === "fr" ? "EN" : "FR";
+  document.querySelectorAll("[data-i18n]").forEach(el => { el.textContent = t(el.dataset.i18n); });
+  document.querySelectorAll("[data-i18n-html]").forEach(el => {
+    el.innerHTML = t(el.dataset.i18nHtml);
+  });
+  document.getElementById("f-key").placeholder = t("key_placeholder");
+  renderModelChecks();
+  poll();  // suggestions/summary text come from the server -- refresh now, not in 2s
+}
+
+function applyTheme(theme) {
+  document.documentElement.dataset.theme = theme;
+  localStorage.setItem("fth-theme", theme);
+  document.getElementById("theme-toggle").textContent = theme === "light" ? "☀️" : "🌙";
 }
 applyTheme(localStorage.getItem("fth-theme") || "dark");
 document.getElementById("theme-toggle").onclick = () =>
   applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+
+document.getElementById("lang-toggle").onclick = async () => {
+  const next = LANG === "fr" ? "en" : "fr";
+  applyLang(next);
+  await api("/settings", {method: "POST",
+                          headers: {"Content-Type": "application/json"},
+                          body: JSON.stringify({lang: next})});
+};
+applyLang(localStorage.getItem("fth-lang") || "en");
+api("/settings").then(s => { if (s.lang && s.lang !== LANG) applyLang(s.lang); });
 
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.remove("active"));
@@ -235,36 +370,38 @@ async function api(path, opts) {
 }
 
 function renderSummary(s) {
+  const hint = t("balance_hint")[s.balance_hint] || s.balance_hint;
   const rows = [
-    ["samples / duration", `${s.samples} / ${s.duration_s.toFixed(1)}s`],
-    ["speed avg / max", `${s.avg_speed_kmh.toFixed(1)} / ${s.max_speed_kmh.toFixed(1)} km/h`],
-    ["redline / pedal overlap",
+    [t("sum_samples_duration"), `${s.samples} / ${s.duration_s.toFixed(1)}s`],
+    [t("sum_speed"), `${s.avg_speed_kmh.toFixed(1)} / ${s.max_speed_kmh.toFixed(1)} km/h`],
+    [t("sum_redline_overlap"),
      `${s.redline_pct.toFixed(1)}% / ${s.pedal_overlap_pct.toFixed(1)}%`],
-    ["grip loss front / rear",
+    [t("sum_grip_loss"),
      `${s.grip_loss_front_pct.toFixed(1)}% / ${s.grip_loss_rear_pct.toFixed(1)}%`
-     + ` (${s.balance_hint})`],
-    ["tire temps avg f / r",
+     + ` (${hint})`],
+    [t("sum_tire_temp"),
      `${s.tire_temp_front_avg_c.toFixed(1)} / ${s.tire_temp_rear_avg_c.toFixed(1)} C`],
-    ["peak power / torque", `${s.max_power_kw.toFixed(0)} kW / ${s.max_torque_nm.toFixed(0)} Nm`],
-    ["wheelspin / lockup f-r",
+    [t("sum_power"), `${s.max_power_kw.toFixed(0)} kW / ${s.max_torque_nm.toFixed(0)} Nm`],
+    [t("sum_wheelspin"),
      `${s.wheelspin_pct.toFixed(1)}% / ${s.lockup_front_pct.toFixed(1)}%`
      + ` - ${s.lockup_rear_pct.toFixed(1)}%`],
-    ["coast oversteer", `${s.coast_oversteer_pct.toFixed(1)}%`],
+    [t("sum_coast"), `${s.coast_oversteer_pct.toFixed(1)}%`],
   ];
   document.getElementById("summary").innerHTML =
     "<table>" + rows.map(r => `<tr><td>${r[0]}</td><td>${r[1]}</td></tr>`).join("") + "</table>";
 }
 
 function renderCar(car) {
+  const keys = t("car_keys");
   const rows = Object.entries(car).map(([k, v]) =>
-    `<tr><td>${k.replace(/_/g, " ")}</td><td>${v}</td></tr>`).join("");
+    `<tr><td>${keys[k] || k.replace(/_/g, " ")}</td><td>${v}</td></tr>`).join("");
   document.getElementById("car").innerHTML = `<div class="card"><table>${rows}</table></div>`;
 }
 
 function renderSuggestions(items) {
   const el = document.getElementById("suggestions");
   if (!items.length) {
-    el.innerHTML = '<span class="hint">none yet — setup looks balanced so far.</span>';
+    el.innerHTML = `<span class="hint">${t("tune_none")}</span>`;
     return;
   }
   el.innerHTML = "<ul>" + items.map(it =>
@@ -280,12 +417,12 @@ async function poll() {
     return;  // server went away; keep the last frame on screen
   }
   if (data.waiting) {
-    document.getElementById("status").textContent = "— waiting for telemetry…";
+    document.getElementById("status").textContent = t("status_waiting");
     return;
   }
   document.getElementById("status").textContent = "";
   document.getElementById("udp-error").textContent =
-    data.udp_error ? "UDP error: " + data.udp_error : "";
+    data.udp_error ? t("udp_error_prefix") + data.udp_error : "";
   renderSummary(data.summary);
   renderCar(data.car);
   renderSuggestions(data.suggestions || []);
@@ -306,17 +443,17 @@ document.getElementById("analyze-btn").onclick = async () => {
   const btn = document.getElementById("analyze-btn");
   const out = document.getElementById("ai-out");
   btn.disabled = true;
-  btn.textContent = "Thinking… (can take up to a minute)";
+  btn.textContent = t("tune_ai_thinking");
   try {
     const result = await api("/analyze", {method: "POST"});
     out.textContent = result.text;
     out.hidden = false;
   } catch {
-    out.textContent = "Request failed.";
+    out.textContent = t("tune_ai_failed");
     out.hidden = false;
   }
   btn.disabled = false;
-  btn.textContent = "Generate AI tuning plan";
+  btn.textContent = t("tune_ai_btn");
 };
 
 function fmtBytes(n) {
@@ -330,7 +467,8 @@ async function refreshCapturesList() {
     `<td>${c.samples}</td><td>${fmtBytes(c.size_bytes)}</td></tr>`
   ).join("");
   document.getElementById("captures-list").innerHTML =
-    "<tr><td>name</td><td>saved</td><td>samples</td><td>size</td></tr>" + rows;
+    `<tr><td>${t("captures_col_name")}</td><td>${t("captures_col_saved")}</td>` +
+    `<td>${t("captures_col_samples")}</td><td>${t("captures_col_size")}</td></tr>` + rows;
 }
 
 async function refreshCaptureStatus() {
@@ -339,7 +477,8 @@ async function refreshCaptureStatus() {
     if (s.error) throw new Error(s.error);
     document.getElementById("capture-controls").hidden = false;
     document.getElementById("capture-status-text").textContent =
-      (s.recording ? "recording — " : "stopped — ") + `${s.samples} samples`;
+      (s.recording ? t("capture_recording") : t("capture_stopped")) +
+      t("capture_samples").replace("{n}", s.samples);
     document.getElementById("capture-save-btn").disabled = s.samples === 0;
   } catch {
     document.getElementById("capture-controls").hidden = true;  // static CSV mode
@@ -353,8 +492,8 @@ async function refreshAutoCaptureStatus() {
     document.getElementById("auto-capture-controls").hidden = false;
     document.getElementById("auto-capture-toggle").checked = s.enabled;
     document.getElementById("auto-capture-status-text").textContent = s.enabled
-      ? `lap ${s.current_lap ?? "?"} in progress — ${s.samples} samples buffered`
-      : "off";
+      ? t("auto_capture_progress").replace("{lap}", s.current_lap ?? "?").replace("{n}", s.samples)
+      : t("auto_capture_off");
   } catch {
     document.getElementById("auto-capture-controls").hidden = true;  // static CSV mode
   }
@@ -411,12 +550,12 @@ let modelsCache = [];
 function renderModelChecks() {
   const el = document.getElementById("model-checks");
   if (!modelsCache.length) {
-    el.textContent = "no models loaded — click Refresh models";
+    el.textContent = t("models_no_models");
     return;
   }
   const current = document.getElementById("f-model").value;
   el.innerHTML = modelsCache.map(m => {
-    const badge = m.reasoning ? " [reasoning]" : "";
+    const badge = m.reasoning ? t("models_reasoning_badge") : "";
     const checked = m.id === current ? "checked" : "";
     return `<label><input type="checkbox" class="model-check" value="${m.id}" ${checked}> ` +
            `${m.name}${badge}</label>`;
@@ -431,7 +570,7 @@ function renderModelChecks() {
 
 async function loadModels() {
   const provider = document.getElementById("f-provider").value;
-  document.getElementById("model-checks").textContent = "loading…";
+  document.getElementById("model-checks").textContent = t("models_loading");
   const data = await api("/models?provider=" + encodeURIComponent(provider));
   modelsCache = data.models.filter(m => m.free);
   renderModelChecks();
@@ -445,7 +584,7 @@ async function loadSettingsForm() {
   document.getElementById("f-model").value = s.model || "stealth/ox-alpha";
   document.getElementById("f-reasoning").value = s.reasoning || "";
   document.getElementById("f-key").placeholder =
-    s.key_set ? "saved — leave empty to keep" : "sk-or-v1-…";
+    s.key_set ? t("key_saved_placeholder") : t("key_placeholder");
 }
 
 document.getElementById("settings-form").onsubmit = async (ev) => {
@@ -461,7 +600,7 @@ document.getElementById("settings-form").onsubmit = async (ev) => {
                           headers: {"Content-Type": "application/json"},
                           body: JSON.stringify(body)});
   document.getElementById("f-key").value = "";
-  document.getElementById("save-status").textContent = "saved ✓";
+  document.getElementById("save-status").textContent = t("save_status_saved");
   setTimeout(() => document.getElementById("save-status").textContent = "", 2000);
   loadSettingsForm();
 };
@@ -521,6 +660,7 @@ def _car_block(packets: list[TelemetryPacket]) -> dict:
 def _dashboard_data(packets: list[TelemetryPacket], udp_error: str | None = None) -> dict:
     packets = normalize_session(packets)
     summary = summarize(packets)
+    lang = config.load().get("lang", "en")
     return {
         "summary": asdict(summary),
         "laps": [{"lap": n, **asdict(s)} for n, s in summarize_per_lap(packets)],
@@ -528,9 +668,10 @@ def _dashboard_data(packets: list[TelemetryPacket], udp_error: str | None = None
         "car": _car_block(packets),
         "suggestions": [
             {"parameter": it.parameter, "change": it.change, "reason": it.reason}
-            for it in suggest(summary)
+            for it in suggest(summary, lang=lang)
         ],
         "series": _series(packets),
+        "lang": lang,
         **({"udp_error": udp_error} if udp_error else {}),
     }
 
@@ -647,6 +788,7 @@ def make_server(
                             "model": stored.get("model", ""),
                             "reasoning": stored.get("reasoning", ""),
                             "provider": stored.get("provider", "openrouter"),
+                            "lang": stored.get("lang", "en"),
                         }
                     ),
                     "application/json",
@@ -686,7 +828,7 @@ def make_server(
             if path == "/settings":
                 allowed = {
                     k: str(fields[k])
-                    for k in ("key", "model", "reasoning", "provider")
+                    for k in ("key", "model", "reasoning", "provider", "lang")
                     if k in fields
                 }
                 config.save(**allowed)

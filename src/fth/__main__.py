@@ -6,6 +6,7 @@ from __future__ import annotations
 import argparse
 import sys
 
+from fth import config
 from fth.advisor import advise
 from fth.dashboard import serve, serve_live
 from fth.ingest import TelemetryPacket, listen
@@ -65,11 +66,15 @@ def build_report(packets: list[TelemetryPacket], ai: bool = False) -> str:
     """The full `fth analyze` report text (summary, per-lap, suggestions)."""
     packets = normalize_session(packets)
     summary = summarize(packets)
-    sections = [format_report(summary)]
-    per_lap = format_per_lap(summarize_per_lap(packets))
+    lang = config.load().get("lang", "en")
+    sections = [format_report(summary, lang=lang)]
+    per_lap = format_per_lap(summarize_per_lap(packets), lang=lang)
     if per_lap:
         sections.append(per_lap)
-    sections.append(advise(summary, packets) if ai else format_suggestions(suggest(summary)))
+    if ai:
+        sections.append(advise(summary, packets))
+    else:
+        sections.append(format_suggestions(suggest(summary, lang=lang), lang=lang))
     return "\n\n".join(sections) + "\n"
 
 

@@ -65,8 +65,11 @@ Celsius at analysis time; nothing to configure.
 fth                # web app on http://127.0.0.1:8000 + live UDP telemetry
 ```
 
-This is all you need while playing. The browser window opens by itself with
-four tabs:
+This is all you need while playing. The UI is bilingual (English/French) —
+toggle with the **EN/FR** button next to the theme toggle; it persists to
+`~/.fth/config.json` (`lang`) and immediately re-renders everything, tuning
+suggestions and session report text included, not just the UI chrome. The
+browser window opens by itself with four tabs:
 
 - **Drive** — live charts (speed/RPM, tire temps, grip loss), session summary
   and a car card (ID, class code, performance index, drivetrain, cylinders)
@@ -141,8 +144,12 @@ lap 2: avg 127.6 km/h max 215.2  grip loss f/r 32%/0%  redline 0%
 ...
 ```
 
-Suggestions can cover tires, alignment, anti-roll bars, springs, gearing,
-brakes, differential and aero — whichever problems your data actually shows.
+Suggestions can cover tires, alignment, anti-roll bars, springs, damping,
+ride height, gearing, brakes, differential (including AWD center split) and
+aero — whichever problems your data actually shows. Rule text and the
+session report are generated in whichever language is set (`lang` in
+`~/.fth/config.json`, or the dashboard's EN/FR toggle); the AI advisor's
+free-text plan follows the same setting when a key is configured.
 
 ### AI advisor settings
 
@@ -197,7 +204,8 @@ on the badge.
 | 16    | Captures tab UI: start/stop/save/import/list                       | ✅ done        |
 | 17    | AI provider choice: OpenRouter or Groq                             | ✅ done        |
 | 18    | Free/reasoning model listing + checkbox picker                     | ✅ done        |
-| 19    | Unit auto-detection wired in; lap-aware session reset; auto-lap capture | ✅ done   |
+| 19    | Fixed TireTemp F→C conversion; lap-aware session reset; auto-lap capture | ✅ done  |
+| 20    | Missing tuning rules (center diff, ride height, damping) + full FR/EN i18n | ✅ done |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

@@ -189,19 +189,20 @@ def advise(s: SessionSummary, packets: list[TelemetryPacket] | None = None) -> s
     `packets`, when given, add a per-lap breakdown to the prompt so the model
     sees lap-to-lap evolution, not just aggregates.
     """
-    rules = suggest(s)
-    fallback = format_suggestions(rules)
     settings = resolve_settings()
+    lang = settings.get("lang", "en")
+    rules = suggest(s, lang=lang)
+    fallback = format_suggestions(rules, lang=lang)
     if not settings.get("key"):
         return fallback
 
     prompt = (
         "Session telemetry summary:\n"
-        f"{format_report(s)}\n\n"
+        f"{format_report(s, lang=lang)}\n\n"
         f"Rule-engine suggestions:\n{fallback}\n\n"
     )
     if packets is not None:
-        per_lap = format_per_lap(summarize_per_lap(packets))
+        per_lap = format_per_lap(summarize_per_lap(packets), lang=lang)
         if per_lap:
             prompt += f"{per_lap}\n\n"
     prompt += "Turn this into a prioritized tuning plan following your instructions."

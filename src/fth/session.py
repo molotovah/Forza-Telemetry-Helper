@@ -286,50 +286,131 @@ def summarize_per_lap(packets: Iterable[TelemetryPacket]) -> list[tuple[int, Ses
     return [(n, summarize(ps)) for n, ps in sorted(by_lap.items())]
 
 
-def format_per_lap(laps: list[tuple[int, SessionSummary]]) -> str:
+_BALANCE_LABEL = {
+    "en": {
+        "understeer-biased": "understeer-biased",
+        "oversteer-biased": "oversteer-biased",
+        "neutral": "neutral",
+    },
+    "fr": {
+        "understeer-biased": "sous-vireur",
+        "oversteer-biased": "survireur",
+        "neutral": "neutre",
+    },
+}
+
+# balance_hint stays a stable English code on SessionSummary (a data value,
+# not display text) — only format_report() localizes it, via this table.
+_R = {
+    "en": {
+        "header": "=== Session summary ===",
+        "samples": "samples {samples}  duration {duration:.1f}s  distance {distance:.2f}km",
+        "laps": "laps {laps}  best lap {best_lap:.2f}s",
+        "speed": "speed: avg {avg:.1f} km/h, max {max:.1f} km/h",
+        "redline_overlap": (
+            "time at redline: {redline:.1f}%  brake/throttle overlap: {overlap:.1f}%"
+        ),
+        "grip_loss": "grip loss: front {front:.1f}% vs rear {rear:.1f}%  ({hint})",
+        "tire_temp": "tire temps avg C: front {front:.1f} / rear {rear:.1f}, hottest {hottest:.1f}",
+        "susp": "max suspension travel m: front {front:.3f} / rear {rear:.3f}",
+        "power": "peak power {power:.0f} kW  peak torque {torque:.0f} Nm",
+        "drivetrain": (
+            "drivetrain {dt}  wheelspin {spin:.1f}%  brake lockup f/r {lf:.1f}%/{lr:.1f}%"
+        ),
+        "coast": "coast oversteer {pct:.1f}%",
+        "hs_grip": "grip loss at >= {thresh:.0f} km/h: front {front:.1f}% / rear {rear:.1f}%",
+        "per_lap_header": "=== Per-lap breakdown ===",
+        "per_lap_line": (
+            "lap {n}: avg {avg:.1f} km/h max {max:.1f}  grip loss f/r {front:.0f}%/{rear:.0f}%"
+            "  redline {redline:.0f}%"
+        ),
+    },
+    "fr": {
+        "header": "=== Résumé de la session ===",
+        "samples": "échantillons {samples}  durée {duration:.1f}s  distance {distance:.2f}km",
+        "laps": "tours {laps}  meilleur tour {best_lap:.2f}s",
+        "speed": "vitesse : moy. {avg:.1f} km/h, max {max:.1f} km/h",
+        "redline_overlap": (
+            "temps à la limite : {redline:.1f}%  chevauchement frein/accél. : {overlap:.1f}%"
+        ),
+        "grip_loss": "perte d'adhérence : avant {front:.1f}% contre arrière {rear:.1f}%  ({hint})",
+        "tire_temp": (
+            "temp. pneus moy. C : avant {front:.1f} / arrière {rear:.1f}, max {hottest:.1f}"
+        ),
+        "susp": "débattement suspension max m : avant {front:.3f} / arrière {rear:.3f}",
+        "power": "puissance max {power:.0f} kW  couple max {torque:.0f} Nm",
+        "drivetrain": (
+            "transmission {dt}  patinage {spin:.1f}%  blocage freins av/ar {lf:.1f}%/{lr:.1f}%"
+        ),
+        "coast": "survirage en roue libre {pct:.1f}%",
+        "hs_grip": (
+            "perte d'adhérence à >= {thresh:.0f} km/h : avant {front:.1f}% / arrière {rear:.1f}%"
+        ),
+        "per_lap_header": "=== Détail par tour ===",
+        "per_lap_line": (
+            "tour {n} : moy. {avg:.1f} km/h max {max:.1f}"
+            "  perte d'adhérence av/ar {front:.0f}%/{rear:.0f}%  limite {redline:.0f}%"
+        ),
+    },
+}
+
+
+def _report_lang(lang: str) -> str:
+    return lang if lang in _R else "en"
+
+
+def format_per_lap(laps: list[tuple[int, SessionSummary]], lang: str = "en") -> str:
     """Per-lap table; empty until there are at least two laps to compare."""
     if len(laps) < 2:
         return ""
-    lines = ["=== Per-lap breakdown ==="]
+    r = _R[_report_lang(lang)]
+    lines = [r["per_lap_header"]]
     for n, s in laps:
         lines.append(
-            f"lap {n}: avg {s.avg_speed_kmh:.1f} km/h max {s.max_speed_kmh:.1f}"
-            f"  grip loss f/r {s.grip_loss_front_pct:.0f}%/{s.grip_loss_rear_pct:.0f}%"
-            f"  redline {s.redline_pct:.0f}%"
+            r["per_lap_line"].format(
+                n=n,
+                avg=s.avg_speed_kmh,
+                max=s.max_speed_kmh,
+                front=s.grip_loss_front_pct,
+                rear=s.grip_loss_rear_pct,
+                redline=s.redline_pct,
+            )
         )
     return "\n".join(lines)
 
 
-def format_report(s: SessionSummary) -> str:
+def format_report(s: SessionSummary, lang: str = "en") -> str:
+    lang = _report_lang(lang)
+    r = _R[lang]
+    hint = _BALANCE_LABEL[lang].get(s.balance_hint, s.balance_hint)
     return "\n".join(
         [
-            "=== Session summary ===",
-            f"samples {s.samples}  duration {s.duration_s:.1f}s  distance {s.distance_km:.2f}km",
-            f"laps {s.laps}  best lap {s.best_lap_s:.2f}s",
-            f"speed: avg {s.avg_speed_kmh:.1f} km/h, max {s.max_speed_kmh:.1f} km/h",
-            f"time at redline: {s.redline_pct:.1f}%"
-            f"  brake/throttle overlap: {s.pedal_overlap_pct:.1f}%",
-            (
-                f"grip loss: front {s.grip_loss_front_pct:.1f}% vs rear {s.grip_loss_rear_pct:.1f}%"
-                f"  ({s.balance_hint})"
+            r["header"],
+            r["samples"].format(samples=s.samples, duration=s.duration_s, distance=s.distance_km),
+            r["laps"].format(laps=s.laps, best_lap=s.best_lap_s),
+            r["speed"].format(avg=s.avg_speed_kmh, max=s.max_speed_kmh),
+            r["redline_overlap"].format(redline=s.redline_pct, overlap=s.pedal_overlap_pct),
+            r["grip_loss"].format(
+                front=s.grip_loss_front_pct, rear=s.grip_loss_rear_pct, hint=hint
             ),
-            (
-                f"tire temps avg C: front {s.tire_temp_front_avg_c:.1f} / rear "
-                f"{s.tire_temp_rear_avg_c:.1f}, hottest {s.tire_temp_max_c:.1f}"
+            r["tire_temp"].format(
+                front=s.tire_temp_front_avg_c,
+                rear=s.tire_temp_rear_avg_c,
+                hottest=s.tire_temp_max_c,
             ),
-            (
-                f"max suspension travel m: front {s.susp_travel_front_max_m:.3f} / rear "
-                f"{s.susp_travel_rear_max_m:.3f}"
+            r["susp"].format(front=s.susp_travel_front_max_m, rear=s.susp_travel_rear_max_m),
+            r["power"].format(power=s.max_power_kw, torque=s.max_torque_nm),
+            r["drivetrain"].format(
+                dt=_dt_label(s.drivetrain_type),
+                spin=s.wheelspin_pct,
+                lf=s.lockup_front_pct,
+                lr=s.lockup_rear_pct,
             ),
-            f"peak power {s.max_power_kw:.0f} kW  peak torque {s.max_torque_nm:.0f} Nm",
-            (
-                f"drivetrain {_dt_label(s.drivetrain_type)}  wheelspin {s.wheelspin_pct:.1f}%"
-                f"  brake lockup f/r {s.lockup_front_pct:.1f}%/{s.lockup_rear_pct:.1f}%"
-            ),
-            f"coast oversteer {s.coast_oversteer_pct:.1f}%",
-            (
-                f"grip loss at >= {_HS_SPEED_KMH:.0f} km/h:"
-                f" front {s.hs_grip_loss_front_pct:.1f}% / rear {s.hs_grip_loss_rear_pct:.1f}%"
+            r["coast"].format(pct=s.coast_oversteer_pct),
+            r["hs_grip"].format(
+                thresh=_HS_SPEED_KMH,
+                front=s.hs_grip_loss_front_pct,
+                rear=s.hs_grip_loss_rear_pct,
             ),
         ]
     )

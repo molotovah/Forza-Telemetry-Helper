@@ -86,6 +86,21 @@ def test_dashboard_data_never_converts_speed():
     assert data["series"]["speed_kmh"][0] == pytest.approx(40.0 * 3.6, abs=0.1)
 
 
+def test_dashboard_data_localizes_suggestions_and_reports_lang():
+    from fth import config
+
+    config.save(lang="fr")
+    ps = [
+        TelemetryPacket.from_bytes(
+            make_packet(current_race_time=float(i), tire_temp_rear_left=230.0)  # ~110 C
+        )
+        for i in range(3)
+    ]
+    data = _dashboard_data(ps)
+    assert data["lang"] == "fr"
+    assert any("Pression des pneus" in it["parameter"] for it in data["suggestions"])
+
+
 def test_settings_roundtrip_over_http():
     httpd = make_server(lambda: None, host="127.0.0.1", port=0)
     thread = threading.Thread(target=httpd.serve_forever, daemon=True)
@@ -98,6 +113,7 @@ def test_settings_roundtrip_over_http():
             "model": "",
             "reasoning": "",
             "provider": "openrouter",
+            "lang": "en",
         }
 
         status, body = _post(base + "/settings", {"key": "k1", "model": "vendor/m"})
@@ -109,6 +125,7 @@ def test_settings_roundtrip_over_http():
             "model": "vendor/m",
             "reasoning": "",
             "provider": "openrouter",
+            "lang": "en",
         }
 
         # posting without a key must keep the stored one
@@ -121,6 +138,11 @@ def test_settings_roundtrip_over_http():
         _post(base + "/settings", {"provider": "groq"})
         _, _, body = _get(base + "/settings")
         assert json.loads(body)["provider"] == "groq"
+
+        # lang switches and round-trips
+        _post(base + "/settings", {"lang": "fr"})
+        _, _, body = _get(base + "/settings")
+        assert json.loads(body)["lang"] == "fr"
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -175,6 +197,9 @@ def test_http_page_and_data():
         assert 'id="f-provider"' in page
         assert 'id="model-checks"' in page
         assert 'id="auto-capture-toggle"' in page
+        assert 'id="lang-toggle"' in page
+        assert "data-i18n=" in page
+        assert "const I18N" in page  # client i18n table present
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200
