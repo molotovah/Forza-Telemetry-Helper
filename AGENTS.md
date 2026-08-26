@@ -40,7 +40,13 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
   `session.py`; most are uncalibrated guesses — see TODO.md before trusting them.
 - Metric semantics follow the official FH6 docs: slip values are normalized
   (0 = full grip, |v| > 1 = grip loss), wheel speeds in rad/s, DrivetrainType
-  0=FWD / 1=RWD / 2=AWD.
+  0=FWD / 1=RWD / 2=AWD. Wire units are fixed, not display/language-dependent:
+  `Speed` m/s, `Power` W, `Torque` N·m (explicit in the docs); `TireTemp*` is
+  always Fahrenheit (undocumented there, confirmed by independent FH
+  telemetry projects) — `session.normalize_units()`/`normalize_session()`
+  convert it to Celsius unconditionally. Raw packets (as read off the wire,
+  pre-normalization) are what CSVs store; normalize only at analysis/display
+  time, never at capture time.
 - The dashboard never echoes the stored API key back to the browser
   (`key_set: bool` only). POST /settings with an empty key keeps the old one.
 - CLI lives in `__main__.py`; bare `fth` launches the live web app,

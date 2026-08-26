@@ -7,7 +7,6 @@ from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
 from fth.session import (
     CsvRecorder,
-    detect_units,
     format_per_lap,
     format_report,
     load_csv,
@@ -221,78 +220,41 @@ def test_hs_grip_loss_empty_band_is_zero():
     assert s.hs_grip_loss_rear_pct == 0.0
 
 
-def test_normalize_units_metric_is_identity():
-    pkt = TelemetryPacket.from_bytes(make_packet(speed=33.0))
-    assert normalize_units(pkt, "metric") is pkt
-
-
-def test_normalize_units_imperial_math():
+def test_normalize_units_converts_tire_temp_f_to_c():
     pkt = TelemetryPacket.from_bytes(
         make_packet(
             tire_temp_front_left=212.0,  # 100 C
-            tire_temp_rear_right=32.0,  # 0 C
-            speed=100.0,  # mph -> 44.704 m/s
-            power=1.0,  # "1 hp" -> 745.7 W
-            torque=1.0,  # 1 lb-ft -> 1.356 Nm
+            tire_temp_front_right=32.0,  # 0 C
+            tire_temp_rear_left=141.0,  # ~60.6 C — the value from the reported bug
+            tire_temp_rear_right=98.6,  # ~37 C
         )
     )
-    n = normalize_units(pkt, "imperial")
+    n = normalize_units(pkt)
     assert n.tire_temp_front_left == pytest.approx(100.0)
-    assert n.tire_temp_rear_right == pytest.approx(0.0)
-    assert n.speed == pytest.approx(44.704, rel=1e-4)
-    assert n.power == pytest.approx(745.699872, rel=1e-6)
-    assert n.torque == pytest.approx(1.35581795, rel=1e-6)
+    assert n.tire_temp_front_right == pytest.approx(0.0)
+    assert n.tire_temp_rear_left == pytest.approx(60.56, abs=0.01)
+    assert n.tire_temp_rear_right == pytest.approx(37.0, abs=0.01)
 
 
-def _imperial_stream(n: int = 30) -> list[TelemetryPacket]:
-    return [
-        TelemetryPacket.from_bytes(
-            make_packet(
-                speed=110.0 + i * 0.2,  # mph-plausible, absurd as m/s (400 km/h)
-                tire_temp_front_left=190.0 + i % 5,
-                tire_temp_front_right=195.0,
-                tire_temp_rear_left=185.0,
-                tire_temp_rear_right=200.0,
-            )
-        )
-        for i in range(n)
-    ]
+def test_normalize_units_never_touches_speed_power_torque():
+    """Speed/Power/Torque are explicitly SI in the official Data Out docs —
+    always, unconditionally. There is no imperial wire format for them."""
+    pkt = TelemetryPacket.from_bytes(make_packet(speed=55.5, power=300000.0, torque=450.0))
+    n = normalize_units(pkt)
+    assert n.speed == pkt.speed
+    assert n.power == pkt.power
+    assert n.torque == pkt.torque
 
 
-def test_detect_units_flags_imperial_looking_stream():
-    assert detect_units(_imperial_stream()) == "imperial"
+def test_normalize_session_converts_every_packet_unconditionally():
+    ps = [TelemetryPacket.from_bytes(make_packet(tire_temp_front_left=212.0)) for _ in range(3)]
+    normalized = normalize_session(ps)
+    assert all(p.tire_temp_front_left == pytest.approx(100.0) for p in normalized)
 
 
-def test_detect_units_defaults_to_metric():
-    ps = [
-        TelemetryPacket.from_bytes(make_packet(speed=40.0, tire_temp_front_left=85.0))
-        for _ in range(30)
-    ]
-    assert detect_units(ps) == "metric"
-    assert detect_units(ps[:5]) == "metric"  # not enough samples: metric
-
-
-def test_normalize_session_auto_converts_detected_imperial_stream():
-    normalized = normalize_session(_imperial_stream(), "auto")
-    assert all(p.speed < 100.0 for p in normalized)  # mph-scale -> plausible m/s
-
-
-def test_normalize_session_auto_leaves_metric_stream_untouched():
-    ps = [TelemetryPacket.from_bytes(make_packet(speed=40.0)) for _ in range(30)]
-    normalized = normalize_session(ps, "auto")
-    assert all(p.speed == 40.0 for p in normalized)
-
-
-def test_normalize_session_explicit_override_skips_detection():
-    # too few samples for detect_units, but an explicit "imperial" still applies
-    ps = [TelemetryPacket.from_bytes(make_packet(speed=100.0))]
-    normalized = normalize_session(ps, "imperial")
-    assert normalized[0].speed == pytest.approx(44.704, rel=1e-4)
-
-
-def test_config_stores_lang_and_units(monkeypatch, tmp_path):
+def test_config_stores_lang(monkeypatch, tmp_path):
     from fth import config
 
     monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
-    config.save(lang="fr", units="auto")
+    config.save(lang="fr")
     assert config.load()["lang"] == "fr"

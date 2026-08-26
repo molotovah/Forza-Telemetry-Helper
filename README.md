@@ -51,10 +51,11 @@ In FH6: **Settings > HUD and Gameplay**
 | Data Out IP Address | `127.0.0.1` (same PC) or your PC's local IP  |
 | Data Out IP Port    | `20777` (avoid 5200–5300 — used by the game) |
 
-Display units (metric/imperial) are auto-detected per session from the
-telemetry itself — no setting to match. Force it if detection ever misfires:
-set `units` to `"metric"` or `"imperial"` in `~/.fth/config.json` (no Settings
-UI for this yet).
+The wire format's units are fixed, not tied to any in-game display/region/
+language setting: `Speed`/`Power`/`Torque` are always SI (documented), tire
+temperatures are always Fahrenheit (undocumented but confirmed by every
+independently-validated FH telemetry project). fth converts tire temps to
+Celsius at analysis time; nothing to configure.
 
 ## Usage
 

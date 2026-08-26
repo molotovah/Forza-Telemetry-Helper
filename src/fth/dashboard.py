@@ -519,7 +519,7 @@ def _car_block(packets: list[TelemetryPacket]) -> dict:
 
 
 def _dashboard_data(packets: list[TelemetryPacket], udp_error: str | None = None) -> dict:
-    packets = normalize_session(packets, config.load().get("units", "auto"))
+    packets = normalize_session(packets)
     summary = summarize(packets)
     return {
         "summary": asdict(summary),
@@ -696,7 +696,7 @@ def make_server(
                 if not ps or len(ps) < 2:
                     self._send('{"error": "no session data yet"}', "application/json", 400)
                 else:
-                    ps = normalize_session(ps, config.load().get("units", "auto"))
+                    ps = normalize_session(ps)
                     self._send(json.dumps({"text": advise(summarize(ps), ps)}), "application/json")
             elif path == "/captures/import":
                 try:

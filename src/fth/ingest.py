@@ -78,10 +78,13 @@ assert struct.calcsize(_FORMAT) == PACKET_SIZE, "packet layout drift"
 
 @dataclass(slots=True)
 class TelemetryPacket:
-    """One decoded Data Out packet.
+    """One decoded Data Out packet, raw off the wire (not unit-normalized).
 
-    Units follow the official documentation: speeds in m/s, power in W,
-    torque in Nm, angles in radians, temperatures as reported by the game.
+    Units follow the official documentation where it specifies them: speeds
+    in m/s, power in W, torque in Nm, angles in radians — always, regardless
+    of any in-game display/region/language setting. TireTemp* is undocumented
+    there but is always Fahrenheit on the wire (confirmed by independent FH
+    telemetry projects); see fth.session.normalize_units to convert it.
     """
 
     is_race_on: int

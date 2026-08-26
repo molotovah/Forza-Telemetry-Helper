@@ -10,7 +10,6 @@ import urllib.request
 
 import pytest
 
-from fth import config
 from fth.dashboard import _MAX_POINTS, _dashboard_data, make_live_server, make_server
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
@@ -70,18 +69,19 @@ def test_dashboard_data_shape():
         assert len(data["series"][key]) == len(data["series"]["t"])
 
 
-def test_dashboard_data_normalizes_explicit_imperial_units():
-    config.save(units="imperial")
+def test_dashboard_data_converts_tire_temp_f_to_c():
     ps = [
-        TelemetryPacket.from_bytes(make_packet(speed=100.0, current_race_time=float(i)))
+        TelemetryPacket.from_bytes(
+            make_packet(current_race_time=float(i), tire_temp_front_left=212.0)  # 100 C
+        )
         for i in range(3)
     ]
     data = _dashboard_data(ps)
-    # 100 mph -> 44.704 m/s -> 160.9 km/h, not 100 * 3.6 = 360 km/h
-    assert data["series"]["speed_kmh"][0] == pytest.approx(44.704 * 3.6, abs=0.1)
+    assert data["series"]["tire_fl"][0] == pytest.approx(100.0, abs=0.1)
 
 
-def test_dashboard_data_auto_detects_metric_by_default():
+def test_dashboard_data_never_converts_speed():
+    # Speed is always m/s on the wire, unconditionally -- must never be touched.
     data = _dashboard_data(_packets(25))
     assert data["series"]["speed_kmh"][0] == pytest.approx(40.0 * 3.6, abs=0.1)
 

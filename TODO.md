@@ -14,15 +14,23 @@ names its ceiling and what would change it.
 - **Aero rules ignore wind, gradient and banking** — high-speed grip loss is
   attributed to downforce alone; the Data Out stream offers no way to separate
   those effects.
-- **Unit auto-detection (`detect_units`/`normalize_units`) is a plausibility
-  heuristic, not a spec** — it existed unused for a while (nothing called it)
-  until dashboard.py/`__main__.py` were wired to run every session through
-  `normalize_session()` before summarizing/advising. Still unverified against
-  a real localized (e.g. French) FH6 install; if display units aren't
-  actually tied to game language the way reported, or the p95 thresholds
-  misfire on a real car/track combo, recalibrate `_DETECT_TEMP`/
-  `_DETECT_SPEED` (session.py) or add an explicit `units` override in
-  Settings instead of relying on auto-detect.
+- **(Resolved, keeping the postmortem.)** An earlier "auto-detect metric vs
+  imperial" heuristic (`detect_units`, a `units` config field) assumed the
+  wire format had two variants depending on display/language settings — it
+  did not, and the heuristic required *both* a hot-tire and a fast-speed
+  anchor to fire, so a session with F-scale tire temps but normal-looking
+  speed (the actual reported bug: "141°C" front tire, i.e. a converted
+  Fahrenheit value mislabeled as Celsius) never triggered it. Checked against
+  the official Data Out docs plus an independently-validated sibling FH
+  telemetry project: `Speed`/`Power`/`Torque` are explicitly SI on the wire,
+  unconditionally, no imperial variant exists; `TireTemp*` is unconditionally
+  Fahrenheit, undocumented officially but confirmed by every community
+  parser checked. `normalize_units()`/`normalize_session()` now do a fixed,
+  always-on TireTemp F→C conversion — no detection, no config field, nothing
+  to misfire. If a *future* report shows some other field wrong (e.g. an
+  actual metric/imperial user preference toggle in a later Forza title),
+  don't resurrect this heuristic — get the field-level unit from
+  documentation or a validated source first, the way this fix did.
 
 ## Advisor (AI layer)
 
