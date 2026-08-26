@@ -60,13 +60,18 @@ fth                # web app on http://127.0.0.1:8000 + live UDP telemetry
 ```
 
 This is all you need while playing. The browser window opens by itself with
-three tabs:
+four tabs:
 
 - **Drive** — live charts (speed/RPM, tire temps, grip loss), session summary
   and a car card (ID, class code, performance index, drivetrain, cylinders)
   as soon as you're on the road. Charts get lap markers.
 - **Tune** — rule-engine suggestions updating live, plus a *Generate AI tuning
   plan* button that sends your whole session to the configured model.
+- **Captures** — start/stop recording independently of the live rolling
+  buffer, save the recording under a name, or import a CSV recorded
+  elsewhere. Saved captures live at `~/.fth/captures/<name>.csv` and are
+  listed here; open one's charts with `fth dashboard ~/.fth/captures/<name>.csv`.
+  Recording controls only appear in live mode (`fth` / `fth dashboard --live`).
 - **Settings** — paste your OpenRouter API key, pick a model
   (`stealth/ox-alpha` by default), set the reasoning effort. Saved locally to
   `~/.fth/config.json`; the key is never sent anywhere except the model
@@ -131,16 +136,24 @@ brakes, differential and aero — whichever problems your data actually shows.
 
 ### AI advisor settings
 
-The key/model configured in the dashboard's Settings tab are used everywhere.
-Environment variables override the file if both are set:
+The provider/key/model configured in the dashboard's Settings tab are used
+everywhere. Environment variables override the file if both are set:
 
-| Variable         | Default                                          |
-| ---------------- | ------------------------------------------------ |
-| `FTH_AI_KEY`     | *(none — or the key saved in the dashboard)*     | 
-| `FTH_AI_MODEL`   | `stealth/ox-alpha` via [OpenRouter](https://openrouter.ai/stealth/ox-alpha) |
-| `FTH_AI_URL`     | OpenRouter chat completions endpoint             |
-| `FTH_AI_TIMEOUT` | `45` seconds                                     |
-| `FTH_AI_REASONING` | *(model default)* — `low`, `high` or `max`     |
+| Variable           | Default                                                    |
+| ------------------ | ----------------------------------------------------------- |
+| `FTH_AI_PROVIDER`  | `openrouter` — or `groq`                                   |
+| `FTH_AI_KEY`       | *(none — or the key saved in the dashboard)*                |
+| `FTH_AI_MODEL`     | `stealth/ox-alpha` via [OpenRouter](https://openrouter.ai/stealth/ox-alpha), `openai/gpt-oss-120b` via [Groq](https://console.groq.com/) |
+| `FTH_AI_URL`       | the provider's chat completions endpoint                    |
+| `FTH_AI_TIMEOUT`   | `45` seconds                                                 |
+| `FTH_AI_REASONING` | *(model default)* — `low`, `high` or `max`; **OpenRouter only**, ignored on Groq |
+
+Settings tab also has a *Refresh models* button that lists the selected
+provider's free/reasoning-capable models as checkboxes — checking one sets it
+as the active model. OpenRouter's list is public; Groq's requires a saved key.
+Detection of "free"/"reasoning" is a heuristic (see TODO.md), not an official
+capability flag, so double-check a model actually fits your use before relying
+on the badge.
 
 ## Command reference
 
@@ -169,6 +182,11 @@ Environment variables override the file if both are set:
 | 11    | Repo hygiene: repo-wide formatting, CI matrix 3.10–3.14, CLI tests | ✅ done        |
 | 12    | Dashboard lap markers and live session reset                       | ✅ done        |
 | 13    | Dashboard-first app: settings, AI trigger and car card in the UI   | ✅ done        |
+| 14    | Dark/light mode toggle                                             | ✅ done        |
+| 15    | Named capture storage: save/load/import/list endpoints             | ✅ done        |
+| 16    | Captures tab UI: start/stop/save/import/list                       | ✅ done        |
+| 17    | AI provider choice: OpenRouter or Groq                             | ✅ done        |
+| 18    | Free/reasoning model listing + checkbox picker                     | ✅ done        |
 
 Known limitations and deferred work live in [TODO.md](TODO.md).
 

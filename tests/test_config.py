@@ -11,6 +11,12 @@ def test_save_load_roundtrip(monkeypatch, tmp_path):
     assert config.load() == {"key": "sk-or", "model": "stealth/ox-alpha"}
 
 
+def test_provider_field_roundtrips(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
+    config.save(provider="groq")
+    assert config.load() == {"provider": "groq"}
+
+
 def test_empty_value_deletes_field(monkeypatch, tmp_path):
     monkeypatch.setenv("FTH_CONFIG", str(tmp_path / "config.json"))
     config.save(key="a", model="m")

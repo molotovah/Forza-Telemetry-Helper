@@ -1,9 +1,10 @@
 """The fth web app: local dashboard over recorded or live FH6 telemetry.
 
 Launched by `fth` (live UDP) or `fth dashboard FILE` (static CSV). One page,
-three tabs — Drive (charts + car card), Tune (rule suggestions + AI plan),
-Settings (OpenRouter key/model stored in ~/.fth/config.json). Everything is
-stdlib http.server + JSON endpoints; Chart.js comes from a CDN.
+four tabs — Drive (charts + car card), Tune (rule suggestions + AI plan),
+Captures (start/stop/save/import named sessions, live mode only for
+recording), Settings (AI provider key/model stored in ~/.fth/config.json).
+Everything is stdlib http.server + JSON endpoints; Chart.js comes from a CDN.
 """
 
 from __future__ import annotations
@@ -15,10 +16,12 @@ import webbrowser
 from collections import deque
 from dataclasses import asdict
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from pathlib import Path
 from typing import Callable
+from urllib.parse import parse_qs, urlsplit
 
-from fth import config
-from fth.advisor import advise, resolve_settings
+from fth import captures, config
+from fth.advisor import advise, list_models, resolve_settings
 from fth.ingest import TelemetryPacket, listen
 from fth.session import summarize, summarize_per_lap
 from fth.tuning import suggest
@@ -34,37 +37,54 @@ _PAGE = """<!doctype html>
 <title>fth</title>
 <script src="https://cdn.jsdelivr.net/npm/chart.js@4"></script>
 <style>
-  body { background: #101418; color: #d8dee6; font: 14px/1.5 system-ui, sans-serif;
+  :root {
+    --bg: #101418; --fg: #d8dee6; --muted: #9ab; --muted-2: #7d8894;
+    --surface: #1b222a; --surface-active: #2a3440; --surface-alt: #161b22;
+    --border: #2a3440; --input-bg: #0d1117; --accent: #2a5d8f;
+    --warn: #e5c07b; --danger: #e06c75; --grid-line: #5c6370;
+  }
+  :root[data-theme="light"] {
+    --bg: #f5f7fa; --fg: #1b222a; --muted: #5b6b7a; --muted-2: #6b7684;
+    --surface: #e7ebf0; --surface-active: #d4dbe3; --surface-alt: #eef1f5;
+    --border: #c7cfd8; --input-bg: #ffffff; --accent: #2a5d8f;
+    --warn: #a06c1a; --danger: #c03040; --grid-line: #9aa5b1;
+  }
+  body { background: var(--bg); color: var(--fg); font: 14px/1.5 system-ui, sans-serif;
          margin: 0; padding: 1.5rem; }
   h1 { font-size: 1.15rem; margin: 0 0 .75rem; }
-  h2 { font-size: .95rem; margin: 1.25rem 0 .5rem; color: #9ab; }
-  nav button { background: #1b222a; color: #d8dee6; border: 0; border-radius: 6px 6px 0 0;
+  h2 { font-size: .95rem; margin: 1.25rem 0 .5rem; color: var(--muted); }
+  nav button { background: var(--surface); color: var(--fg); border: 0; border-radius: 6px 6px 0 0;
                padding: .4rem 1.1rem; margin-right: .25rem; cursor: pointer; font-size: .9rem; }
-  nav button.active { background: #2a3440; font-weight: 600; }
+  nav button.active { background: var(--surface-active); font-weight: 600; }
   section { display: none; max-width: 900px; }
   section.active { display: block; }
   td { padding: .15rem 1rem .15rem 0; white-space: nowrap; }
-  td:first-child { color: #9ab; }
-  #status { color: #e5c07b; }
-  #udp-error { color: #e06c75; }
-  .card { background: #1b222a; border-radius: 8px; padding: .75rem 1rem;
+  td:first-child { color: var(--muted); }
+  #status { color: var(--warn); }
+  #udp-error { color: var(--danger); }
+  #theme-toggle { background: var(--surface); color: var(--fg); border: 1px solid var(--border);
+                  border-radius: 6px; padding: .2rem .55rem; cursor: pointer; font-size: .9rem; }
+  .card { background: var(--surface); border-radius: 8px; padding: .75rem 1rem;
           display: inline-block; vertical-align: top; margin-right: 1rem; }
   canvas { max-width: 900px; }
-  label { display: block; margin-top: .8rem; color: #9ab; }
-  input, select { background: #0d1117; color: #d8dee6; border: 1px solid #2a3440;
+  label { display: block; margin-top: .8rem; color: var(--muted); }
+  input, select { background: var(--input-bg); color: var(--fg); border: 1px solid var(--border);
                   border-radius: 5px; padding: .35rem .5rem; width: 320px; }
-  button.action { background: #2a5d8f; border: 0; border-radius: 6px; color: #fff;
+  button.action { background: var(--accent); border: 0; border-radius: 6px; color: #fff;
                   padding: .45rem 1.2rem; cursor: pointer; margin-top: .8rem; }
   button.action:disabled { opacity: .5; cursor: wait; }
-  pre { white-space: pre-wrap; background: #161b22; border-radius: 8px; padding: 1rem; }
-  .hint { color: #7d8894; font-size: .85rem; }
+  pre { white-space: pre-wrap; background: var(--surface-alt); border-radius: 8px; padding: 1rem; }
+  .hint { color: var(--muted-2); font-size: .85rem; }
 </style>
 </head>
 <body>
-<h1>Forza Telemetry Helper <span id="status"></span><span id="udp-error"></span></h1>
+<h1>Forza Telemetry Helper <span id="status"></span><span id="udp-error"></span>
+  <button id="theme-toggle" aria-label="Toggle theme">🌙</button>
+</h1>
 <nav>
   <button data-tab="drive" class="active">Drive</button>
   <button data-tab="tune">Tune</button>
+  <button data-tab="captures">Captures</button>
   <button data-tab="settings">Settings</button>
 </nav>
 
@@ -85,27 +105,63 @@ _PAGE = """<!doctype html>
   <pre id="ai-out" hidden></pre>
 </section>
 
+<section id="tab-captures">
+  <div id="capture-controls">
+    <p class="hint" id="capture-status-text">checking recording status…</p>
+    <button class="action" id="capture-start">Start capture</button>
+    <button class="action" id="capture-stop">Stop capture</button>
+    <label>Name</label>
+    <input type="text" id="capture-name" placeholder="e.g. spa-gt3-race1">
+    <button class="action" id="capture-save-btn">Save capture</button>
+  </div>
+  <h2>Import a CSV</h2>
+  <label>Name</label>
+  <input type="text" id="capture-import-name" placeholder="e.g. spa-gt3-race1">
+  <label>File</label>
+  <input type="file" id="capture-import-file" accept=".csv">
+  <h2>Saved captures</h2>
+  <table id="captures-list"></table>
+</section>
+
 <section id="tab-settings">
   <p class="hint">Stored in your user config file; the key is sent only to the
   configured API endpoint.</p>
   <form id="settings-form">
+    <label>Provider</label>
+    <select id="f-provider">
+      <option value="openrouter">OpenRouter</option>
+      <option value="groq">Groq</option>
+    </select>
     <label>API key (leave empty to keep the saved one)</label>
     <input type="password" id="f-key" placeholder="sk-or-v1-…">
     <label>Model ID</label>
     <input type="text" id="f-model">
-    <label>Reasoning effort (ox-alpha)</label>
+    <label>Reasoning effort (OpenRouter only)</label>
     <select id="f-reasoning">
       <option value="">default (max)</option>
       <option value="low">low</option>
       <option value="high">high</option>
       <option value="max">max</option>
     </select>
+    <label>Free / reasoning models for this provider
+      <button type="button" class="action" id="refresh-models-btn">Refresh models</button>
+    </label>
+    <div id="model-checks" class="hint">not loaded — click Refresh models</div>
     <button class="action" type="submit">Save settings</button>
     <span id="save-status" class="hint"></span>
   </form>
 </section>
 
 <script>
+function applyTheme(t) {
+  document.documentElement.dataset.theme = t;
+  localStorage.setItem("fth-theme", t);
+  document.getElementById("theme-toggle").textContent = t === "light" ? "☀️" : "🌙";
+}
+applyTheme(localStorage.getItem("fth-theme") || "dark");
+document.getElementById("theme-toggle").onclick = () =>
+  applyTheme(document.documentElement.dataset.theme === "light" ? "dark" : "light");
+
 document.querySelectorAll("nav button").forEach(b => b.onclick = () => {
   document.querySelectorAll("nav button").forEach(x => x.classList.remove("active"));
   document.querySelectorAll("section").forEach(x => x.classList.remove("active"));
@@ -139,7 +195,7 @@ const lapLines = {
     const labels = chart.data.labels;
     const ctx = chart.ctx;
     ctx.save();
-    ctx.strokeStyle = "#5c6370";
+    ctx.strokeStyle = getComputedStyle(document.documentElement).getPropertyValue("--grid-line");
     ctx.setLineDash([4, 4]);
     for (let i = 1; i < laps.length; i++) {
       const idx = labels.indexOf(laps[i].t_start);
@@ -256,8 +312,106 @@ document.getElementById("analyze-btn").onclick = async () => {
   btn.textContent = "Generate AI tuning plan";
 };
 
+function fmtBytes(n) {
+  return n < 1024 ? `${n} B` : `${(n / 1024).toFixed(1)} KB`;
+}
+
+async function refreshCapturesList() {
+  const data = await api("/captures");
+  const rows = data.captures.map(c =>
+    `<tr><td>${c.name}</td><td>${new Date(c.saved_at * 1000).toLocaleString()}</td>` +
+    `<td>${c.samples}</td><td>${fmtBytes(c.size_bytes)}</td></tr>`
+  ).join("");
+  document.getElementById("captures-list").innerHTML =
+    "<tr><td>name</td><td>saved</td><td>samples</td><td>size</td></tr>" + rows;
+}
+
+async function refreshCaptureStatus() {
+  try {
+    const s = await api("/capture/status");
+    if (s.error) throw new Error(s.error);
+    document.getElementById("capture-controls").hidden = false;
+    document.getElementById("capture-status-text").textContent =
+      (s.recording ? "recording — " : "stopped — ") + `${s.samples} samples`;
+    document.getElementById("capture-save-btn").disabled = s.samples === 0;
+  } catch {
+    document.getElementById("capture-controls").hidden = true;  // static CSV mode
+  }
+}
+
+document.getElementById("capture-start").onclick = async () => {
+  await api("/capture/start", {method: "POST"});
+  refreshCaptureStatus();
+};
+document.getElementById("capture-stop").onclick = async () => {
+  await api("/capture/stop", {method: "POST"});
+  refreshCaptureStatus();
+};
+document.getElementById("capture-save-btn").onclick = async () => {
+  const name = document.getElementById("capture-name").value.trim();
+  if (!name) return;
+  await api("/capture/save", {method: "POST",
+                              headers: {"Content-Type": "application/json"},
+                              body: JSON.stringify({name})});
+  document.getElementById("capture-name").value = "";
+  refreshCaptureStatus();
+  refreshCapturesList();
+};
+document.getElementById("capture-import-file").onchange = async (ev) => {
+  const file = ev.target.files[0];
+  if (!file) return;
+  const name = document.getElementById("capture-import-name").value.trim() ||
+    file.name.replace(/\\.csv$/i, "");
+  const csv = await file.text();
+  await api("/captures/import", {method: "POST",
+                                 headers: {"Content-Type": "application/json"},
+                                 body: JSON.stringify({name, csv})});
+  ev.target.value = "";
+  refreshCapturesList();
+};
+document.querySelector('[data-tab="captures"]').addEventListener("click", () => {
+  refreshCaptureStatus();
+  refreshCapturesList();
+});
+refreshCaptureStatus();
+refreshCapturesList();
+
+let modelsCache = [];
+
+function renderModelChecks() {
+  const el = document.getElementById("model-checks");
+  if (!modelsCache.length) {
+    el.textContent = "no models loaded — click Refresh models";
+    return;
+  }
+  const current = document.getElementById("f-model").value;
+  el.innerHTML = modelsCache.map(m => {
+    const badge = m.reasoning ? " [reasoning]" : "";
+    const checked = m.id === current ? "checked" : "";
+    return `<label><input type="checkbox" class="model-check" value="${m.id}" ${checked}> ` +
+           `${m.name}${badge}</label>`;
+  }).join("<br>");
+  document.querySelectorAll(".model-check").forEach(cb => cb.onchange = () => {
+    if (cb.checked) {
+      document.querySelectorAll(".model-check").forEach(o => { if (o !== cb) o.checked = false; });
+      document.getElementById("f-model").value = cb.value;
+    }
+  });
+}
+
+async function loadModels() {
+  const provider = document.getElementById("f-provider").value;
+  document.getElementById("model-checks").textContent = "loading…";
+  const data = await api("/models?provider=" + encodeURIComponent(provider));
+  modelsCache = data.models.filter(m => m.free);
+  renderModelChecks();
+}
+document.getElementById("refresh-models-btn").onclick = loadModels;
+document.getElementById("f-provider").onchange = loadModels;
+
 async function loadSettingsForm() {
   const s = await api("/settings");
+  document.getElementById("f-provider").value = s.provider || "openrouter";
   document.getElementById("f-model").value = s.model || "stealth/ox-alpha";
   document.getElementById("f-reasoning").value = s.reasoning || "";
   document.getElementById("f-key").placeholder =
@@ -267,6 +421,7 @@ async function loadSettingsForm() {
 document.getElementById("settings-form").onsubmit = async (ev) => {
   ev.preventDefault();
   const body = {
+    provider: document.getElementById("f-provider").value,
     model: document.getElementById("f-model").value.trim(),
     reasoning: document.getElementById("f-reasoning").value,
   };
@@ -349,11 +504,39 @@ def _dashboard_data(packets: list[TelemetryPacket], udp_error: str | None = None
     }
 
 
+class CaptureController:
+    """Explicit start/stop/save recording, separate from the live rolling buffer."""
+
+    def __init__(self) -> None:
+        self._packets: list[TelemetryPacket] = []
+        self._recording = False
+
+    def note(self, pkt: TelemetryPacket) -> None:
+        if self._recording:
+            self._packets.append(pkt)
+
+    def start(self) -> None:
+        self._packets = []
+        self._recording = True
+
+    def stop(self) -> None:
+        self._recording = False
+
+    def status(self) -> dict:
+        return {"recording": self._recording, "samples": len(self._packets)}
+
+    def save(self, name: str) -> Path:
+        if not self._packets:
+            raise ValueError("no captured samples to save")
+        return captures.save(name, self._packets)
+
+
 def make_server(
     packets_getter: Callable[[], list[TelemetryPacket] | None],
     host: str = "127.0.0.1",
     port: int = 8000,
     error_getter: Callable[[], str] | None = None,
+    capture: CaptureController | None = None,
 ) -> HTTPServer:
     """packets_getter() -> current packet list, or None while nothing arrived."""
 
@@ -389,10 +572,27 @@ def make_server(
                             "key_set": bool(resolve_settings().get("key")),
                             "model": stored.get("model", ""),
                             "reasoning": stored.get("reasoning", ""),
+                            "provider": stored.get("provider", "openrouter"),
                         }
                     ),
                     "application/json",
                 )
+            elif path == "/models":
+                settings = resolve_settings()
+                override = parse_qs(urlsplit(self.path).query).get("provider", [None])[0]
+                if override:
+                    settings = {**settings, "provider": override}
+                self._send(
+                    json.dumps({"models": list_models(settings), "provider": settings["provider"]}),
+                    "application/json",
+                )
+            elif path == "/captures":
+                self._send(json.dumps({"captures": captures.list_captures()}), "application/json")
+            elif path == "/capture/status":
+                if capture is None:
+                    self._send('{"error": "live mode only"}', "application/json", 404)
+                else:
+                    self._send(json.dumps(capture.status()), "application/json")
             else:
                 self._serve_page()
 
@@ -405,7 +605,11 @@ def make_server(
                 self._send('{"error": "invalid JSON"}', "application/json", 400)
                 return
             if path == "/settings":
-                allowed = {k: str(fields[k]) for k in ("key", "model", "reasoning") if k in fields}
+                allowed = {
+                    k: str(fields[k])
+                    for k in ("key", "model", "reasoning", "provider")
+                    if k in fields
+                }
                 config.save(**allowed)
                 self._send('{"ok": true}', "application/json")
             elif path == "/analyze":
@@ -414,6 +618,29 @@ def make_server(
                     self._send('{"error": "no session data yet"}', "application/json", 400)
                 else:
                     self._send(json.dumps({"text": advise(summarize(ps), ps)}), "application/json")
+            elif path == "/captures/import":
+                try:
+                    captures.import_csv(fields.get("name", ""), fields.get("csv", ""))
+                    self._send('{"ok": true}', "application/json")
+                except captures.InvalidName as exc:
+                    self._send(json.dumps({"error": str(exc)}), "application/json", 400)
+            elif path in ("/capture/start", "/capture/stop", "/capture/save"):
+                if capture is None:
+                    self._send('{"error": "live mode only"}', "application/json", 404)
+                elif path == "/capture/start":
+                    capture.start()
+                    self._send('{"ok": true}', "application/json")
+                elif path == "/capture/stop":
+                    capture.stop()
+                    self._send('{"ok": true}', "application/json")
+                else:
+                    try:
+                        capture.save(fields.get("name", ""))
+                        self._send(
+                            json.dumps({"ok": True, "name": fields.get("name")}), "application/json"
+                        )
+                    except (ValueError, captures.InvalidName) as exc:
+                        self._send(json.dumps({"error": str(exc)}), "application/json", 400)
             else:
                 self._send('{"error": "not found"}', "application/json", 404)
 
@@ -447,6 +674,7 @@ def make_live_server(
     """Live mode server: a daemon thread feeds a rolling buffer from UDP."""
     buf: deque[TelemetryPacket] = deque(maxlen=_BUFFER_LEN)
     state = {"udp_error": ""}
+    capture = CaptureController()
 
     def feed() -> None:
         last_t: float | None = None
@@ -457,6 +685,7 @@ def make_live_server(
                 if last_t is not None and pkt.current_race_time < last_t - 1.0:
                     buf.clear()  # race time went backwards: fresh session
                 buf.append(pkt)
+                capture.note(pkt)
                 last_t = pkt.current_race_time
         except OSError as exc:
             state["udp_error"] = f"cannot bind udp://{udp_host}:{udp_port}: {exc}"
@@ -466,7 +695,7 @@ def make_live_server(
         return list(buf) if len(buf) >= 2 else None
 
     threading.Thread(target=feed, daemon=True).start()
-    return make_server(getter, host, port, error_getter=lambda: state["udp_error"])
+    return make_server(getter, host, port, error_getter=lambda: state["udp_error"], capture=capture)
 
 
 def serve_live(

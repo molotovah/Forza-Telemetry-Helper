@@ -10,7 +10,7 @@ import json
 import os
 from pathlib import Path
 
-_FIELDS = ("key", "url", "model", "reasoning", "timeout", "lang", "units")
+_FIELDS = ("key", "url", "model", "reasoning", "timeout", "lang", "units", "provider")
 
 
 def _path() -> Path:

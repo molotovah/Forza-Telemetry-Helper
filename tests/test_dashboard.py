@@ -1,5 +1,6 @@
 """Tests for the web app: /data payload, settings, analyze, live modes."""
 
+import io
 import json
 import socket
 import threading
@@ -12,6 +13,7 @@ import pytest
 from fth.dashboard import _MAX_POINTS, _dashboard_data, make_live_server, make_server
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
+from fth.session import CsvRecorder
 
 
 @pytest.fixture(autouse=True)
@@ -74,19 +76,34 @@ def test_settings_roundtrip_over_http():
     base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
     try:
         _, _, body = _get(base + "/settings")
-        assert json.loads(body) == {"key_set": False, "model": "", "reasoning": ""}
+        assert json.loads(body) == {
+            "key_set": False,
+            "model": "",
+            "reasoning": "",
+            "provider": "openrouter",
+        }
 
         status, body = _post(base + "/settings", {"key": "k1", "model": "vendor/m"})
         assert status == 200
 
         _, _, body = _get(base + "/settings")
-        assert json.loads(body) == {"key_set": True, "model": "vendor/m", "reasoning": ""}
+        assert json.loads(body) == {
+            "key_set": True,
+            "model": "vendor/m",
+            "reasoning": "",
+            "provider": "openrouter",
+        }
 
         # posting without a key must keep the stored one
         _post(base + "/settings", {"model": "vendor/m2"})
         _, _, body = _get(base + "/settings")
         cfg = json.loads(body)
         assert cfg["key_set"] and cfg["model"] == "vendor/m2"
+
+        # provider switches and round-trips
+        _post(base + "/settings", {"provider": "groq"})
+        _, _, body = _get(base + "/settings")
+        assert json.loads(body)["provider"] == "groq"
     finally:
         httpd.shutdown()
         httpd.server_close()
@@ -133,6 +150,13 @@ def test_http_page_and_data():
         assert 'id="tab-settings"' in page
         assert 'id="analyze-btn"' in page
         assert 'fetch("/data")' in page or 'api("/data")' in page
+        assert 'id="theme-toggle"' in page
+        assert "--bg:" in page
+        assert '[data-theme="light"]' in page
+        assert 'id="tab-captures"' in page
+        assert 'id="capture-start"' in page
+        assert 'id="f-provider"' in page
+        assert 'id="model-checks"' in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200
@@ -201,6 +225,122 @@ def test_live_server_receives_udp_packets():
         data = json.loads(payload)
         assert data["summary"]["samples"] == 4
         assert data["summary"]["max_speed_kmh"] == (53.0 * 3.6)
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_models_endpoint(monkeypatch):
+    monkeypatch.setattr(
+        "fth.dashboard.list_models",
+        lambda settings=None: [{"id": "m1", "name": "M1", "free": True, "reasoning": False}],
+    )
+    httpd = make_server(lambda: None, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+        _, _, body = _get(base + "/models")
+        data = json.loads(body)
+        assert data["models"] == [{"id": "m1", "name": "M1", "free": True, "reasoning": False}]
+        assert data["provider"] == "openrouter"
+
+        _, _, body = _get(base + "/models?provider=groq")
+        assert json.loads(body)["provider"] == "groq"
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_capture_lifecycle_over_http(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CAPTURES_DIR", str(tmp_path / "captures"))
+    probe = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+    probe.bind(("127.0.0.1", 0))
+    udp_port = probe.getsockname()[1]
+    probe.close()
+
+    httpd = make_live_server(host="127.0.0.1", port=0, udp_port=udp_port)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+
+        status, body = _post(base + "/capture/start", {})
+        assert status == 200
+
+        sock = socket.socket(socket.AF_INET, socket.SOCK_DGRAM)
+        for i in range(3):
+            sock.sendto(
+                make_packet(speed=50.0 + i, current_race_time=float(i)), ("127.0.0.1", udp_port)
+            )
+        sock.close()
+
+        samples = None
+        for _ in range(50):
+            _, _, body = _get(base + "/capture/status")
+            samples = json.loads(body)["samples"]
+            if samples >= 3:
+                break
+            time.sleep(0.1)
+        assert samples == 3
+
+        status, body = _post(base + "/capture/stop", {})
+        assert status == 200
+        _, _, body = _get(base + "/capture/status")
+        assert json.loads(body) == {"recording": False, "samples": 3}
+
+        status, body = _post(base + "/capture/save", {"name": "lap-test"})
+        assert status == 200
+        assert json.loads(body)["name"] == "lap-test"
+
+        _, _, body = _get(base + "/captures")
+        names = [c["name"] for c in json.loads(body)["captures"]]
+        assert "lap-test" in names
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_capture_endpoints_404_in_static_mode():
+    httpd = make_server(lambda: _packets(6), host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+        status, body = _post(base + "/capture/start", {})
+        assert status == 404
+        try:
+            _get(base + "/capture/status")
+            raise AssertionError("expected 404")
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404
+    finally:
+        httpd.shutdown()
+        httpd.server_close()
+
+
+def test_captures_import_over_http(monkeypatch, tmp_path):
+    monkeypatch.setenv("FTH_CAPTURES_DIR", str(tmp_path / "captures"))
+    httpd = make_server(lambda: None, host="127.0.0.1", port=0)
+    thread = threading.Thread(target=httpd.serve_forever, daemon=True)
+    thread.start()
+    try:
+        base = f"http://{httpd.server_address[0]}:{httpd.server_port}"
+        buf = io.StringIO()
+        recorder = CsvRecorder(buf)
+        for pkt in _packets(3):
+            recorder.write(pkt)
+        recorder.flush()
+
+        status, body = _post(base + "/captures/import", {"name": "imported", "csv": buf.getvalue()})
+        assert status == 200
+
+        _, _, body = _get(base + "/captures")
+        names = [c["name"] for c in json.loads(body)["captures"]]
+        assert "imported" in names
+
+        status, body = _post(base + "/captures/import", {"name": "bad", "csv": "x,y\n1,2\n"})
+        assert status == 400
     finally:
         httpd.shutdown()
         httpd.server_close()

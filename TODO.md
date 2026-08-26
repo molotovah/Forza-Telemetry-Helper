@@ -26,15 +26,30 @@ names its ceiling and what would change it.
 - **API key stored in plain text** at `~/.fth/config.json` when saved from the
   dashboard (file perms follow umask). Accepted for a single-user local tool;
   don't share the file, and don't build multi-user tooling on top of this.
+- **Free/reasoning-model detection is a substring heuristic**
+  (`_REASONING_HINTS` in advisor.py), not sourced from an official capability
+  flag — recalibrate against real API responses; provider catalogs change
+  over time. Groq's `default_model` (`openai/gpt-oss-120b`) and its
+  `supports_reasoning_effort: False` guard are likewise best-effort as of
+  writing — verify against Groq's current docs before trusting either.
+- **Single stored API key for both providers**: switching provider in
+  Settings doesn't switch which key is stored — there's one `key` field in
+  `~/.fth/config.json`, not one per provider. Fine for a single-provider-at-a-
+  time workflow; re-enter the key after switching if it differs.
 
 ## Dashboard
 
 - **Car card shows raw codes**: `car_ordinal` and `car_class` are game-internal
   IDs — FH6's Data Out carries no model name, and the class-code → letter
   (D…X) mapping is not officially documented. Displayed as-is.
-- **Live mode keeps one rolling buffer (~2-3 min)** with no persistence;
-  returning to the menu clears it on the next packet (race-time reset) rather
-  than archiving the previous session.
+- **The Drive tab's rolling buffer (~2-3 min) is still separate from
+  captures**: it clears on race-time regression (menu return) as before.
+  Explicit recording (start/stop/save via the Captures tab) is independent
+  and must be saved before stopping or the process exits, or the recorded
+  packets are discarded — `CaptureController` in dashboard.py holds them only
+  in memory until `.save()` writes to `~/.fth/captures/`.
+- **Captures tab is list/manage only**: saved captures aren't loaded back into
+  the Drive/Tune charts in-app; review one with `fth dashboard <path>`.
 - **Polling every 2s**, not websockets/SSE — right size for localhost.
 - **Chart.js comes from CDN**: the dashboard is offline except for that one
   request; vendoring ~200KB into the repo was declined.

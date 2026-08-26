@@ -6,7 +6,7 @@ import urllib.error
 
 import pytest
 
-from fth.advisor import advise
+from fth.advisor import advise, list_models
 from fth.fixtures import make_packet
 from fth.ingest import TelemetryPacket
 from fth.session import summarize
@@ -20,6 +20,7 @@ def _no_ai_env(monkeypatch):
         "FTH_AI_MODEL",
         "FTH_AI_TIMEOUT",
         "FTH_AI_REASONING",
+        "FTH_AI_PROVIDER",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -175,6 +176,94 @@ def test_prompt_includes_per_lap_breakdown(monkeypatch):
     # aggregates only when no packets are passed
     advise(summarize(_packets()))
     assert "Per-lap breakdown" not in captured["prompt"]
+
+
+def test_groq_provider_defaults(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["url"] = req.full_url
+        captured["payload"] = json.loads(req.data)
+        captured["headers"] = dict(req.header_items())
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setenv("FTH_AI_PROVIDER", "groq")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    assert captured["url"] == "https://api.groq.com/openai/v1/chat/completions"
+    assert captured["payload"]["model"] == "openai/gpt-oss-120b"
+    assert "X-title" not in captured["headers"]  # OpenRouter-only header
+
+
+def test_groq_reasoning_effort_guarded_off(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["payload"] = json.loads(req.data)
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setenv("FTH_AI_PROVIDER", "groq")
+    monkeypatch.setenv("FTH_AI_REASONING", "low")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    assert "reasoning_effort" not in captured["payload"]
+
+
+def test_list_models_openrouter(monkeypatch):
+    def fake_urlopen(req, timeout):
+        assert "Authorization" not in dict(req.header_items())  # public listing
+        body = json.dumps(
+            {
+                "data": [
+                    {"id": "vendor/big:free", "name": "Big"},
+                    {"id": "vendor/r1-distill", "name": "R1", "pricing": {"prompt": "0.001"}},
+                ]
+            }
+        ).encode()
+        return _FakeResponse(body)
+
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+    models = list_models({"provider": "openrouter", "key": "", "timeout": "45"})
+    assert {m["id"]: m["free"] for m in models} == {
+        "vendor/big:free": True,
+        "vendor/r1-distill": False,
+    }
+    assert {m["id"]: m["reasoning"] for m in models} == {
+        "vendor/big:free": False,
+        "vendor/r1-distill": True,
+    }
+
+
+def test_list_models_groq_requires_key():
+    assert list_models({"provider": "groq", "key": "", "timeout": "45"}) == []
+
+
+def test_list_models_groq_sends_key(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["auth"] = req.get_header("Authorization")
+        return _FakeResponse(
+            json.dumps({"data": [{"id": "gpt-oss-120b", "name": "GPT-OSS"}]}).encode()
+        )
+
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+    models = list_models({"provider": "groq", "key": "gk", "timeout": "45"})
+    assert captured["auth"] == "Bearer gk"
+    assert models[0]["free"] is True
+
+
+def test_list_models_network_error_returns_empty(monkeypatch, capsys):
+    def fake_urlopen(req, timeout):
+        raise urllib.error.URLError("nope")
+
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+    assert list_models({"provider": "openrouter", "key": "", "timeout": "45"}) == []
+    assert "model list unavailable" in capsys.readouterr().err
 
 
 def test_lang_fr_directs_model(monkeypatch, tmp_path):

@@ -23,9 +23,10 @@ ruff format --check .          # CI gate too — repo IS format-clean, keep it t
 - `ingest.py` — 324-byte packet struct spec, `TelemetryPacket`, `listen()` UDP loop
 - `session.py` — CSV record/load, `SessionSummary`, `summarize()`, `summarize_per_lap()`, report formatting
 - `tuning.py` — rules engine mapping metrics to relative `Suggestion`s; thresholds are module-level `_CONSTANTS`
-- `advisor.py` — AI layer: OpenRouter (`stealth/ox-alpha` by default) via stdlib `urllib`; settings resolved defaults <- `~/.fth/config.json` <- env (`FTH_AI_*`); always falls back to the rules engine on missing key or any error
+- `advisor.py` — AI layer: OpenRouter or Groq (`_PROVIDERS` table, OpenAI-compatible chat API) via stdlib `urllib`; settings resolved provider defaults <- `~/.fth/config.json` <- env (`FTH_AI_*`); `list_models()` fetches/flags free+reasoning models per provider; always falls back to the rules engine on missing key or any error
 - `config.py` — persistent user settings store (`~/.fth/config.json`, path overridable via `FTH_CONFIG`)
-- `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`), Chart.js CDN, stdlib `http.server`
+- `captures.py` — named capture storage (`~/.fth/captures/<name>.csv`, path overridable via `FTH_CAPTURES_DIR`): save/load/import/list, reuses `session.CsvRecorder`/`load_csv`
+- `dashboard.py` — the web app (static CSV mode + live UDP mode): single page with Drive/Tune/Captures/Settings tabs polling JSON endpoints (`/data`, `/settings`, `/analyze`, `/captures`, `/capture/*`), Chart.js CDN, stdlib `http.server`
 - `fixtures.py` — synthetic packet builder for tests/demos (`make_packet(**overrides)`)
 
 ## Conventions
