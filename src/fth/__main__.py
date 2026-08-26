@@ -66,7 +66,9 @@ def _analyze(args: argparse.Namespace) -> None:
     per_lap = format_per_lap(summarize_per_lap(packets))
     if per_lap:
         sections.append(per_lap)
-    sections.append(advise(summary) if args.ai else format_suggestions(suggest(summary)))
+    sections.append(
+        advise(summary, packets) if args.ai else format_suggestions(suggest(summary))
+    )
     report = "\n\n".join(sections) + "\n"
     if args.out:
         with open(args.out, "w") as f:

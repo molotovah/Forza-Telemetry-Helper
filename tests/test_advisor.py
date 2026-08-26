@@ -14,7 +14,7 @@ from fth.session import summarize
 
 @pytest.fixture(autouse=True)
 def _no_ai_env(monkeypatch):
-    for name in ("FTH_AI_URL", "FTH_AI_KEY", "FTH_AI_MODEL"):
+    for name in ("FTH_AI_URL", "FTH_AI_KEY", "FTH_AI_MODEL", "FTH_AI_TIMEOUT"):
         monkeypatch.delenv(name, raising=False)
 
 
@@ -78,3 +78,42 @@ def test_http_error_falls_back_to_rules(monkeypatch, capsys):
     out = advise(summarize(_packets()))
     assert "Suggested tuning changes" in out
     assert "AI advisor unavailable" in capsys.readouterr().err
+
+
+def test_timeout_env_var(monkeypatch):
+    seen = {}
+
+    def fake_urlopen(req, timeout):
+        seen["timeout"] = timeout
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    monkeypatch.setenv("FTH_AI_URL", "https://ai.example/v1/chat/completions")
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setenv("FTH_AI_TIMEOUT", "7")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    advise(summarize(_packets()))
+    assert seen["timeout"] == 7
+
+
+def test_prompt_includes_per_lap_breakdown(monkeypatch):
+    captured = {}
+
+    def fake_urlopen(req, timeout):
+        captured["prompt"] = json.loads(req.data)["messages"][1]["content"]
+        return _FakeResponse(json.dumps({"choices": [{"message": {"content": "ok"}}]}).encode())
+
+    monkeypatch.setenv("FTH_AI_URL", "https://ai.example/v1/chat/completions")
+    monkeypatch.setenv("FTH_AI_KEY", "secret")
+    monkeypatch.setattr("fth.advisor.urllib.request.urlopen", fake_urlopen)
+
+    ps = [
+        TelemetryPacket.from_bytes(make_packet(current_race_time=float(i), lap_number=i // 2))
+        for i in range(4)
+    ]
+    advise(summarize(ps), packets=ps)
+    assert "Per-lap breakdown" in captured["prompt"]
+
+    # aggregates only when no packets are passed
+    advise(summarize(_packets()))
+    assert "Per-lap breakdown" not in captured["prompt"]

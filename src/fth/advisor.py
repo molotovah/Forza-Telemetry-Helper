@@ -2,9 +2,10 @@
 chat API and returns a prioritized tuning report.
 
 Configuration (environment variables):
-  FTH_AI_URL    chat-completions endpoint, e.g. https://host/v1/chat/completions
-  FTH_AI_KEY    bearer token
-  FTH_AI_MODEL  model name (default: ox-alpha)
+  FTH_AI_URL      chat-completions endpoint, e.g. https://host/v1/chat/completions
+  FTH_AI_KEY      bearer token
+  FTH_AI_MODEL    model name (default: ox-alpha)
+  FTH_AI_TIMEOUT  request timeout in seconds (default: 45)
 
 Without FTH_AI_URL/FTH_AI_KEY — or if the request fails — the rules-engine
 output is returned unchanged (offline fallback).
@@ -17,11 +18,12 @@ import os
 import sys
 import urllib.request
 
-from fth.session import SessionSummary, format_report
+from fth.ingest import TelemetryPacket
+from fth.session import SessionSummary, format_per_lap, format_report, summarize_per_lap
 from fth.tuning import format_suggestions, suggest
 
 _DEFAULT_MODEL = "ox-alpha"
-_TIMEOUT_S = 45
+_DEFAULT_TIMEOUT_S = 45
 
 _SYSTEM = (
     "You are an experienced Forza Horizon 6 race engineer. You get telemetry-derived "
@@ -32,7 +34,7 @@ _SYSTEM = (
 )
 
 
-def _chat(url: str, key: str, model: str, prompt: str) -> str:
+def _chat(url: str, key: str, model: str, prompt: str, timeout: int) -> str:
     req = urllib.request.Request(
         url,
         data=json.dumps(
@@ -47,12 +49,16 @@ def _chat(url: str, key: str, model: str, prompt: str) -> str:
         ).encode(),
         headers={"Content-Type": "application/json", "Authorization": f"Bearer {key}"},
     )
-    with urllib.request.urlopen(req, timeout=_TIMEOUT_S) as resp:
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
         return json.load(resp)["choices"][0]["message"]["content"]
 
 
-def advise(s: SessionSummary) -> str:
-    """Full tuning report: AI when configured, otherwise the rules engine."""
+def advise(s: SessionSummary, packets: list[TelemetryPacket] | None = None) -> str:
+    """Full tuning report: AI when configured, otherwise the rules engine.
+
+    `packets`, when given, add a per-lap breakdown to the prompt so the model
+    sees lap-to-lap evolution, not just aggregates.
+    """
     rules = suggest(s)
     fallback = format_suggestions(rules)
     url = os.environ.get("FTH_AI_URL", "")
@@ -64,10 +70,16 @@ def advise(s: SessionSummary) -> str:
         "Session telemetry summary:\n"
         f"{format_report(s)}\n\n"
         f"Rule-engine suggestions:\n{fallback}\n\n"
-        "Turn this into a prioritized tuning plan."
     )
+    if packets is not None:
+        per_lap = format_per_lap(summarize_per_lap(packets))
+        if per_lap:
+            prompt += f"{per_lap}\n\n"
+    prompt += "Turn this into a prioritized tuning plan."
     try:
-        return _chat(url, key, os.environ.get("FTH_AI_MODEL", _DEFAULT_MODEL), prompt)
+        model = os.environ.get("FTH_AI_MODEL", _DEFAULT_MODEL)
+        timeout = int(os.environ.get("FTH_AI_TIMEOUT", _DEFAULT_TIMEOUT_S))
+        return _chat(url, key, model, prompt, timeout)
     except Exception as exc:  # network/API errors must never lose the rules report
         print(f"fth: AI advisor unavailable ({exc}); using rules engine.", file=sys.stderr)
         return fallback
