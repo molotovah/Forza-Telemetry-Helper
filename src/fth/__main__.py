@@ -59,15 +59,19 @@ def _live_line(pkt: TelemetryPacket) -> str:
     )
 
 
-def _analyze(args: argparse.Namespace) -> None:
-    packets = _load(args.log)
+def build_report(packets: list[TelemetryPacket], ai: bool = False) -> str:
+    """The full `fth analyze` report text (summary, per-lap, suggestions)."""
     summary = summarize(packets)
     sections = [format_report(summary)]
     per_lap = format_per_lap(summarize_per_lap(packets))
     if per_lap:
         sections.append(per_lap)
-    sections.append(advise(summary, packets) if args.ai else format_suggestions(suggest(summary)))
-    report = "\n\n".join(sections) + "\n"
+    sections.append(advise(summary, packets) if ai else format_suggestions(suggest(summary)))
+    return "\n\n".join(sections) + "\n"
+
+
+def _analyze(args: argparse.Namespace) -> None:
+    report = build_report(_load(args.log), ai=args.ai)
     if args.out:
         with open(args.out, "w") as f:
             f.write(report)
@@ -124,6 +128,8 @@ def main() -> None:
     first = sys.argv[1] if len(sys.argv) > 1 else ""
     argv = sys.argv[1:] if first in ("live", "analyze", "dashboard") else ["live", *sys.argv[1:]]
     args = parser.parse_args(argv)
+    if args.cmd == "dashboard" and not args.live and not args.log:
+        parser.error("dashboard needs a CSV log (or --live)")
     if args.cmd == "live":
         _live(args)
     elif args.cmd == "dashboard":
