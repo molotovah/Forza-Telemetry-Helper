@@ -72,6 +72,22 @@ names its ceiling and what would change it.
 
 ## Dashboard
 
+- **(Resolved, keeping the postmortem.)** The Drive tab's charts silently
+  plotted zero points for a while — `makeChart()`'s dataset mapping (in
+  `_PAGE`'s `<script>`) built each Chart.js dataset from `CHART_DEFS` but
+  never copied `.key` onto it, so `poll()`'s `ds.data = ser[ds.key]` always
+  read `ser[undefined]`. Every backend test (payload shape, HTTP roundtrips,
+  page-content string matches) passed the whole time — none of them execute
+  the JS or inspect an actual rendered chart, so this went unnoticed until
+  reported. Found and confirmed with a throwaway Playwright script (Chromium
+  is already cached at `~/.cache/ms-playwright`; `npm install playwright` in
+  a scratch dir reuses it without downloading) that loaded the live page,
+  read `charts[id].data.datasets[*].data.length` and `scales.y.min/max`
+  directly, and diffed before/after the fix. Not part of the test suite —
+  no Node/browser dependency in this repo's CI — but worth rerunning by hand
+  after any non-trivial change to `_PAGE`'s chart code; a page-content
+  string check (`"key: d.key" in page`) now guards this exact regression,
+  cheaply, without needing a browser.
 - **Car card shows raw codes**: `car_ordinal` and `car_class` are game-internal
   IDs — FH6's Data Out carries no model name, and the class-code → letter
   (D…X) mapping is not officially documented. Displayed as-is.

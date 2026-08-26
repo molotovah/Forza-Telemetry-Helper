@@ -200,6 +200,10 @@ def test_http_page_and_data():
         assert 'id="lang-toggle"' in page
         assert "data-i18n=" in page
         assert "const I18N" in page  # client i18n table present
+        # Chart.js dataset objects must carry `key` (the /data series field
+        # name) through from CHART_DEFS, or poll()'s `ser[ds.key]` lookup is
+        # always undefined and every chart silently plots zero points.
+        assert "key: d.key" in page
 
         status, ctype, payload = _get(base + "/data")
         assert status == 200

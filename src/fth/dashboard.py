@@ -356,7 +356,7 @@ function makeChart(id, sets, scales) {
   return new Chart(document.getElementById(id), {
     type: "line",
     data: {labels: [],
-           datasets: sets.map(d => ({label: d.label, data: [], pointRadius: 0,
+           datasets: sets.map(d => ({label: d.label, key: d.key, data: [], pointRadius: 0,
                                      borderWidth: d.width || 1.5,
                                      borderColor: d.color, yAxisID: d.axis || "y"}))},
     options: {animation: false, interaction: {mode: "index", intersect: false}, scales},
